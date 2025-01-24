@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Numerology Website - Login</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/17.0.19/css/intlTelInput.css" />
+
+    <!-- Firebase SDK -->
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-check.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-analytics.js"></script>
+    <link rel="icon" href="https://www.google.com/favicon.ico" type="image/x-icon">
+</head>
+
+<body>
+    <div class="container">
+        <h2>Numerology Login</h2>
+        <form id="login-form">
+            <div class="form-group">
+                <input type="tel" id="phone-number" placeholder="Phone Number" required>
+            </div>
+            <div class="form-group">
+                <button id="send-otp-button" type="button">Send OTP</button>
+            </div>
+            <div class="form-group" id="otp-field" style="display: none;">
+                <input type="text" id="otp-code" placeholder="Enter OTP" required>
+                <button id="verify-otp-button" type="button">Verify OTP</button>
+            </div>
+            <div class="error" id="error-message" style="display: none;">
+            </div>
+        </form>
+    </div>
+    <script src="config.js" type="module"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/intl-tel-input/17.0.19/js/intlTelInput.min.js"></script>
+    <script src="script.js" type="module"></script>
+</body>
+
+</html>
