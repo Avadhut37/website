@@ -145,24 +145,48 @@ function LivePreview({ files, appName, terminalLogs, isRunning }) {
   const iframeRef = useRef(null);
 
   useEffect(() => {
-    if (!files || !isRunning) {
-      if (!isRunning) {
-        setPreviewHtml(`
-          <!DOCTYPE html>
-          <html><head><style>
-            body { font-family: system-ui; background: #1a1a2e; color: #888; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
-            .msg { text-align: center; }
-            .icon { font-size: 48px; margin-bottom: 16px; }
-          </style></head>
-          <body><div class="msg"><div class="icon">▶️</div><p>Click "Run" in the terminal to start the app</p></div></body></html>
-        `);
-      }
+    // If not running, show the "click run" message
+    if (!isRunning) {
+      setPreviewHtml(`
+        <!DOCTYPE html>
+        <html><head><style>
+          body { font-family: system-ui; background: #1a1a2e; color: #888; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+          .msg { text-align: center; }
+          .icon { font-size: 48px; margin-bottom: 16px; }
+        </style></head>
+        <body><div class="msg"><div class="icon">▶️</div><p>Click "Run" in the terminal to start the app</p></div></body></html>
+      `);
+      return;
+    }
+    
+    // If running but no files yet, show loading state
+    if (!files) {
+      setPreviewHtml(`
+        <!DOCTYPE html>
+        <html><head><style>
+          body { font-family: system-ui; background: #1a1a2e; color: #888; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+          .msg { text-align: center; }
+          .spinner { width: 48px; height: 48px; border: 4px solid #333; border-top-color: #6366f1; border-radius: 50%; animation: spin 1s linear infinite; }
+          @keyframes spin { to { transform: rotate(360deg); } }
+        </style></head>
+        <body><div class="msg"><div class="spinner"></div><p style="margin-top: 16px;">Generating code...</p></div></body></html>
+      `);
       return;
     }
 
     // Find the generated frontend files
-    const appFile = Object.keys(files).find(f => f.includes("frontend") && (f.includes("App.jsx") || f.includes("App.js")));
-    const cssFile = Object.keys(files).find(f => f.includes("frontend") && f.endsWith(".css"));
+    const appFile = Object.keys(files).find(f => 
+      (f.includes("frontend") || f.includes("src")) && 
+      (f.includes("App.jsx") || f.includes("App.js") || f.endsWith("App.jsx") || f.endsWith("App.js"))
+    );
+    const cssFile = Object.keys(files).find(f => 
+      (f.includes("frontend") || f.includes("src")) && 
+      (f.includes("index.css") || f.includes("App.css") || f.endsWith(".css"))
+    );
+    
+    console.log('🔍 Debug - Files:', Object.keys(files));
+    console.log('🔍 Debug - App file found:', appFile);
+    console.log('🔍 Debug - CSS file found:', cssFile);
     
     // Extract actual generated App code or use fallback
     let appCode = appFile ? files[appFile] : null;
