@@ -153,7 +153,6 @@ function LivePreview({ files, appName, terminalLogs, isRunning }) {
             body { font-family: system-ui; background: #1a1a2e; color: #888; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
             .msg { text-align: center; }
             .icon { font-size: 48px; margin-bottom: 16px; }
-            .btn { margin-top: 16px; padding: 8px 16px; background: #6366f1; color: white; border: none; border-radius: 8px; cursor: pointer; }
           </style></head>
           <body><div class="msg"><div class="icon">▶️</div><p>Click "Run" in the terminal to start the app</p></div></body></html>
         `);
@@ -161,14 +160,21 @@ function LivePreview({ files, appName, terminalLogs, isRunning }) {
       return;
     }
 
-    // Find the App.jsx or main component
-    const appFile = Object.keys(files).find(f => f.includes("App.jsx") || f.includes("App.js"));
-    const cssFile = Object.keys(files).find(f => f.endsWith(".css") && f.includes("index"));
-    const htmlFile = Object.keys(files).find(f => f.endsWith("index.html"));
-
-    // Build a working React preview
-    const appCode = appFile ? files[appFile] : null;
+    // Find the generated frontend files
+    const appFile = Object.keys(files).find(f => f.includes("frontend") && (f.includes("App.jsx") || f.includes("App.js")));
+    const cssFile = Object.keys(files).find(f => f.includes("frontend") && f.endsWith(".css"));
+    
+    // Extract actual generated App code or use fallback
+    let appCode = appFile ? files[appFile] : null;
     const cssCode = cssFile ? files[cssFile] : "";
+    
+    // If we have generated code, use it; otherwise create a fallback demo
+    if (appCode) {
+      // Clean up the generated code - remove imports that won't work in browser
+      appCode = appCode
+        .replace(/import\s+.*?from\s+['"].*?['"]\s*;?\s*/g, '')
+        .replace(/export\s+default\s+/g, '');
+    }
     
     // Create a standalone HTML that renders the React app
     const html = `
@@ -184,42 +190,51 @@ function LivePreview({ files, appName, terminalLogs, isRunning }) {
   <script src="https://cdn.tailwindcss.com"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: system-ui, -apple-system, sans-serif; }
     ${cssCode}
   </style>
 </head>
 <body>
   <div id="root"></div>
   <script type="text/babel">
-    // Mock axios for demo
+    // Mock axios for frontend demo
     const axios = {
       create: () => axios,
       interceptors: { request: { use: () => {} } },
       get: async (url) => {
-        console.log('GET', url);
-        if (url.includes('/items')) return { data: [] };
+        console.log('🔵 GET', url);
+        if (url.includes('/items') || url.includes('/todos')) return { data: [] };
         if (url.includes('/auth/me')) return { data: { id: 1, username: 'demo_user', email: 'demo@example.com' } };
         return { data: {} };
       },
       post: async (url, data) => {
-        console.log('POST', url, data);
+        console.log('🟢 POST', url, data);
         if (url.includes('/auth/login')) return { data: { access_token: 'demo_token' } };
         if (url.includes('/auth/register')) return { data: { id: 1, username: data.username } };
-        if (url.includes('/items')) return { data: { id: Date.now(), ...data, created_at: new Date().toISOString() } };
-        return { data: {} };
+        if (url.includes('/items') || url.includes('/todos')) {
+          return { data: { id: Date.now(), ...data, created_at: new Date().toISOString() } };
+        }
+        return { data: { id: Date.now(), ...data } };
       },
-      put: async (url, data) => { console.log('PUT', url, data); return { data: { id: 1, ...data } }; },
-      delete: async (url) => { console.log('DELETE', url); return { data: { message: 'Deleted' } }; }
+      put: async (url, data) => { 
+        console.log('🟡 PUT', url, data); 
+        return { data: { id: 1, ...data, updated_at: new Date().toISOString() } }; 
+      },
+      delete: async (url) => { 
+        console.log('🔴 DELETE', url); 
+        return { data: { message: 'Deleted successfully' } }; 
+      }
     };
 
-    // Simple App Component for Preview
+    ${appCode || `
+    // Fallback demo app
     function App() {
       const [items, setItems] = React.useState([
-        { id: 1, title: 'Sample Task 1', description: 'This is a demo task', created_at: new Date().toISOString() },
-        { id: 2, title: 'Sample Task 2', description: 'Another demo task', created_at: new Date().toISOString() },
+        { id: 1, title: 'Sample Item 1', description: 'This is a demo', created_at: new Date().toISOString() },
+        { id: 2, title: 'Sample Item 2', description: 'Another demo', created_at: new Date().toISOString() },
       ]);
       const [newTitle, setNewTitle] = React.useState('');
       const [newDesc, setNewDesc] = React.useState('');
-      const [user] = React.useState({ username: 'demo_user' });
 
       const addItem = (e) => {
         e.preventDefault();
@@ -234,14 +249,9 @@ function LivePreview({ files, appName, terminalLogs, isRunning }) {
       return (
         <div className="min-h-screen bg-gradient-to-br from-blue-100 to-purple-100 p-4">
           <div className="max-w-2xl mx-auto">
-            <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
-              <div className="flex justify-between items-center mb-6">
-                <h1 className="text-2xl font-bold text-gray-800">👋 Hello, {user.username}!</h1>
-                <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm">● Online</span>
-              </div>
-              
+            <div className="bg-white rounded-xl shadow-lg p-6">
+              <h1 className="text-2xl font-bold text-gray-800 mb-6">${appName}</h1>
               <form onSubmit={addItem} className="mb-6 p-4 bg-gray-50 rounded-lg">
-                <h3 className="font-semibold mb-3 text-gray-700">Add New Item</h3>
                 <input
                   type="text"
                   value={newTitle}
@@ -252,37 +262,45 @@ function LivePreview({ files, appName, terminalLogs, isRunning }) {
                 <textarea
                   value={newDesc}
                   onChange={(e) => setNewDesc(e.target.value)}
-                  placeholder="Description (optional)"
+                  placeholder="Description"
                   className="w-full p-2 border rounded mb-2 h-20 resize-none focus:ring-2 focus:ring-blue-500 outline-none"
                 />
-                <button type="submit" className="w-full py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition">
-                  ➕ Add Item
+                <button type="submit" className="w-full py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+                  Add Item
                 </button>
               </form>
-
-              <h3 className="font-semibold mb-3 text-gray-700">Your Items ({items.length})</h3>
               <div className="space-y-3">
                 {items.map(item => (
-                  <div key={item.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border hover:shadow-md transition">
+                  <div key={item.id} className="flex justify-between items-center p-4 bg-gray-50 rounded-lg border">
                     <div>
-                      <h4 className="font-medium text-gray-800">{item.title}</h4>
-                      {item.description && <p className="text-sm text-gray-500">{item.description}</p>}
-                      <p className="text-xs text-gray-400 mt-1">{new Date(item.created_at).toLocaleDateString()}</p>
+                      <h4 className="font-medium">{item.title}</h4>
+                      <p className="text-sm text-gray-500">{item.description}</p>
                     </div>
-                    <button onClick={() => deleteItem(item.id)} className="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 text-sm">
-                      🗑️ Delete
+                    <button onClick={() => deleteItem(item.id)} className="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600">
+                      Delete
                     </button>
                   </div>
                 ))}
               </div>
             </div>
-            <p className="text-center text-gray-500 text-sm">🚀 Generated by AI App Builder</p>
           </div>
         </div>
       );
     }
+    `}
 
-    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    try {
+      ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+    } catch (error) {
+      console.error('Preview render error:', error);
+      document.getElementById('root').innerHTML = \`
+        <div style="padding: 20px; background: #fee; color: #c00; border-radius: 8px; margin: 20px;">
+          <h3>⚠️ Preview Error</h3>
+          <p>\${error.message}</p>
+          <p style="font-size: 12px; color: #666; margin-top: 10px;">Check the browser console for details</p>
+        </div>
+      \`;
+    }
   </script>
 </body>
 </html>`;

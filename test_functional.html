@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Functional Test - Builder</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-white p-8">
+    <h1 class="text-2xl font-bold mb-4">🧪 Functional Tests</h1>
+    <div id="results" class="space-y-2"></div>
+
+    <script>
+        const API_BASE = "http://localhost:8000/api/v1";
+        const results = document.getElementById("results");
+
+        function log(message, type = "info") {
+            const colors = {
+                info: "text-blue-400",
+                success: "text-green-400",
+                error: "text-red-400",
+                warning: "text-yellow-400"
+            };
+            const div = document.createElement("div");
+            div.className = colors[type];
+            div.textContent = message;
+            results.appendChild(div);
+        }
+
+        async function runTests() {
+            log("🚀 Starting functional tests...", "info");
+            
+            // Test 1: Health Check
+            try {
+                log("\n📍 Test 1: Health check");
+                const health = await fetch("http://localhost:8000/health");
+                const healthData = await health.json();
+                log(`✅ Health check passed: ${JSON.stringify(healthData)}`, "success");
+            } catch (e) {
+                log(`❌ Health check failed: ${e.message}`, "error");
+            }
+
+            // Test 2: AI Status
+            try {
+                log("\n📍 Test 2: AI status");
+                const status = await fetch(`${API_BASE}/ai/status`);
+                const statusData = await status.json();
+                log(`✅ AI Status: ${statusData.providers.length} providers available`, "success");
+            } catch (e) {
+                log(`❌ AI status failed: ${e.message}`, "error");
+            }
+
+            // Test 3: Preview Generation (with timeout handling)
+            try {
+                log("\n📍 Test 3: Preview generation (this may take 30-60 seconds...)");
+                log("⏳ Waiting for AI to generate code...", "warning");
+                
+                const controller = new AbortController();
+                const timeout = setTimeout(() => controller.abort(), 120000); // 2 min timeout
+                
+                const response = await fetch(`${API_BASE}/ai/preview`, {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({
+                        spec: { raw: "A simple counter app with increment and decrement buttons", name: "CounterTest" }
+                    }),
+                    signal: controller.signal
+                });
+                
+                clearTimeout(timeout);
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    log(`✅ Preview generation succeeded!`, "success");
+                    log(`   Files: ${data.file_count}`, "success");
+                    log(`   Provider: ${data.provider}`, "success");
+                    log(`   Sample files: ${Object.keys(data.files).slice(0, 3).join(", ")}`, "success");
+                } else {
+                    log(`❌ Preview failed: ${response.status} ${response.statusText}`, "error");
+                }
+            } catch (e) {
+                if (e.name === 'AbortError') {
+                    log(`⚠️  Preview timed out after 2 minutes`, "warning");
+                } else {
+                    log(`❌ Preview generation failed: ${e.message}`, "error");
+                }
+            }
+
+            log("\n✅ Tests completed!", "success");
+        }
+
+        runTests();
+    </script>
+</body>
+</html>
