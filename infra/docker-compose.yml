@@ -1,0 +1,22 @@
+version: '3.8'
+services:
+  backend:
+    build: ./backend
+    ports:
+      - '8000:8000'
+    volumes:
+      - ./backend:/app
+      - ./backend/data:/app/data
+    depends_on:
+      - redis
+  redis:
+    image: redis:7
+    ports:
+      - '6379:6379'
+  worker:
+    build: ./backend
+    command: rq worker --with-scheduler
+    volumes:
+      - ./backend:/app
+    depends_on:
+      - redis
