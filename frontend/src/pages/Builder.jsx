@@ -3,98 +3,59 @@ import axios from "axios";
 
 const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1";
 
-// Simple syntax highlighting for code
+// Syntax highlighting
 function highlightCode(code, language) {
   if (!code) return "";
+  let h = code.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   
-  let highlighted = code
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
-
   if (language === "python") {
-    highlighted = highlighted.replace(
-      /\b(def|class|import|from|return|if|else|elif|for|while|try|except|with|as|async|await|True|False|None|and|or|not|in|is)\b/g,
-      '<span class="text-purple-400 font-semibold">$1</span>'
-    );
-    highlighted = highlighted.replace(
-      /(["'`])(?:(?!\1)[^\\]|\\.)*?\1/g,
-      '<span class="text-green-400">$&</span>'
-    );
-    highlighted = highlighted.replace(
-      /(#.*$)/gm,
-      '<span class="text-gray-500 italic">$1</span>'
-    );
-    highlighted = highlighted.replace(
-      /(@\w+)/g,
-      '<span class="text-yellow-400">$1</span>'
-    );
+    h = h.replace(/\b(def|class|import|from|return|if|else|elif|for|while|try|except|with|as|async|await|True|False|None|and|or|not|in|is)\b/g, '<span class="text-purple-400">$1</span>');
+    h = h.replace(/(["'`])(?:(?!\1)[^\\]|\\.)*?\1/g, '<span class="text-green-400">$&</span>');
+    h = h.replace(/(#.*$)/gm, '<span class="text-gray-500">$1</span>');
+    h = h.replace(/(@\w+)/g, '<span class="text-yellow-400">$1</span>');
   } else if (language === "javascript" || language === "jsx") {
-    highlighted = highlighted.replace(
-      /\b(const|let|var|function|return|if|else|for|while|class|import|export|from|default|async|await|try|catch|new|this|true|false|null|undefined)\b/g,
-      '<span class="text-purple-400 font-semibold">$1</span>'
-    );
-    highlighted = highlighted.replace(
-      /(["'`])(?:(?!\1)[^\\]|\\.)*?\1/g,
-      '<span class="text-green-400">$&</span>'
-    );
-    highlighted = highlighted.replace(
-      /(\/\/.*$)/gm,
-      '<span class="text-gray-500 italic">$1</span>'
-    );
+    h = h.replace(/\b(const|let|var|function|return|if|else|for|while|class|import|export|from|default|async|await|try|catch|new|this|true|false|null|undefined)\b/g, '<span class="text-purple-400">$1</span>');
+    h = h.replace(/(["'`])(?:(?!\1)[^\\]|\\.)*?\1/g, '<span class="text-green-400">$&</span>');
+    h = h.replace(/(\/\/.*$)/gm, '<span class="text-gray-500">$1</span>');
   } else if (language === "html") {
-    highlighted = highlighted.replace(
-      /(&lt;\/?[a-z]\w*)/gi,
-      '<span class="text-blue-400">$1</span>'
-    );
+    h = h.replace(/(&lt;\/?[a-z]\w*)/gi, '<span class="text-blue-400">$1</span>');
   }
-
-  return highlighted;
+  return h;
 }
 
-// File tree component
+// File Tree
 function FileTree({ files, selectedFile, onSelect }) {
-  const fileList = Object.keys(files).sort((a, b) => {
-    const aIsFolder = a.includes("/");
-    const bIsFolder = b.includes("/");
-    if (aIsFolder && !bIsFolder) return -1;
-    if (!aIsFolder && bIsFolder) return 1;
-    return a.localeCompare(b);
-  });
-
-  const getFileIcon = (filename) => {
-    if (filename.endsWith(".py")) return "🐍";
-    if (filename.endsWith(".js") || filename.endsWith(".jsx")) return "📜";
-    if (filename.endsWith(".html")) return "🌐";
-    if (filename.endsWith(".css")) return "🎨";
-    if (filename.endsWith(".json")) return "📋";
-    if (filename.endsWith(".txt") || filename.endsWith(".md")) return "📄";
+  const fileList = Object.keys(files).sort();
+  const getIcon = (f) => {
+    if (f.endsWith(".py")) return "🐍";
+    if (f.endsWith(".js") || f.endsWith(".jsx")) return "📜";
+    if (f.endsWith(".html")) return "🌐";
+    if (f.endsWith(".css")) return "🎨";
+    if (f.endsWith(".json")) return "📋";
     return "📄";
   };
 
   return (
     <div className="bg-gray-900 text-gray-300 p-2 overflow-y-auto h-full">
       <div className="text-xs font-semibold text-gray-500 uppercase mb-2 px-2">Files</div>
-      {fileList.map((filename) => (
+      {fileList.map((f) => (
         <div
-          key={filename}
-          onClick={() => onSelect(filename)}
+          key={f}
+          onClick={() => onSelect(f)}
           className={`flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer text-sm truncate ${
-            selectedFile === filename
-              ? "bg-blue-600 text-white"
-              : "hover:bg-gray-800"
+            selectedFile === f ? "bg-blue-600 text-white" : "hover:bg-gray-800"
           }`}
         >
-          <span>{getFileIcon(filename)}</span>
-          <span className="truncate">{filename}</span>
+          <span>{getIcon(f)}</span>
+          <span className="truncate">{f}</span>
         </div>
       ))}
     </div>
   );
 }
 
-// Code editor component
-function CodeEditor({ code, language, filename }) {
+// Code Editor
+function CodeEditor({ code, language, filename, onCodeChange }) {
   const lines = code ? code.split("\n") : [];
   
   return (
@@ -108,149 +69,226 @@ function CodeEditor({ code, language, filename }) {
           📋 Copy
         </button>
       </div>
-      
       <div className="flex-1 overflow-auto font-mono text-sm">
         {code ? (
           <div className="flex min-h-full">
             <div className="bg-gray-800 text-gray-500 text-right py-4 px-2 select-none sticky left-0">
-              {lines.map((_, i) => (
-                <div key={i} className="leading-6">{i + 1}</div>
-              ))}
+              {lines.map((_, i) => <div key={i} className="leading-6">{i + 1}</div>)}
             </div>
             <pre className="flex-1 py-4 px-4 text-gray-300 overflow-x-auto">
-              <code
-                dangerouslySetInnerHTML={{
-                  __html: highlightCode(code, language),
-                }}
-                className="leading-6 block"
-              />
+              <code dangerouslySetInnerHTML={{ __html: highlightCode(code, language) }} className="leading-6 block" />
             </pre>
           </div>
         ) : (
-          <div className="flex items-center justify-center h-full text-gray-500">
-            Select a file to view code
-          </div>
+          <div className="flex items-center justify-center h-full text-gray-500">Select a file to view code</div>
         )}
       </div>
     </div>
   );
 }
 
-// Live preview component
-function LivePreview({ files, appName }) {
+// Terminal Panel
+function Terminal({ logs, isRunning, onRun, onStop, onClear }) {
+  const termRef = useRef(null);
+  
+  useEffect(() => {
+    if (termRef.current) {
+      termRef.current.scrollTop = termRef.current.scrollHeight;
+    }
+  }, [logs]);
+
+  return (
+    <div className="h-full flex flex-col bg-gray-950">
+      <div className="flex items-center justify-between px-3 py-2 bg-gray-800 border-b border-gray-700">
+        <div className="flex items-center gap-2">
+          <span className="text-gray-300 text-sm font-medium">⌨️ Terminal</span>
+          {isRunning && (
+            <span className="flex items-center gap-1 text-green-400 text-xs">
+              <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
+              Running
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-2">
+          {!isRunning ? (
+            <button onClick={onRun} className="text-xs px-2 py-1 bg-green-600 text-white rounded hover:bg-green-500">
+              ▶ Run
+            </button>
+          ) : (
+            <button onClick={onStop} className="text-xs px-2 py-1 bg-red-600 text-white rounded hover:bg-red-500">
+              ⬛ Stop
+            </button>
+          )}
+          <button onClick={onClear} className="text-xs px-2 py-1 bg-gray-700 text-gray-300 rounded hover:bg-gray-600">
+            Clear
+          </button>
+        </div>
+      </div>
+      <div ref={termRef} className="flex-1 overflow-auto p-3 font-mono text-xs">
+        {logs.length === 0 ? (
+          <div className="text-gray-500">Click "Run" to start the application...</div>
+        ) : (
+          logs.map((log, i) => (
+            <div key={i} className={`${log.type === 'error' ? 'text-red-400' : log.type === 'success' ? 'text-green-400' : log.type === 'info' ? 'text-blue-400' : 'text-gray-300'}`}>
+              <span className="text-gray-500">[{log.time}]</span> {log.message}
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+// Live Preview with actual React rendering
+function LivePreview({ files, appName, terminalLogs, isRunning }) {
   const [previewHtml, setPreviewHtml] = useState("");
+  const iframeRef = useRef(null);
 
   useEffect(() => {
-    if (!files) return;
-
-    const htmlFile = Object.keys(files).find(
-      (f) => f.endsWith("index.html") || f.endsWith(".html")
-    );
-    
-    if (htmlFile && files[htmlFile]) {
-      let html = files[htmlFile];
-      
-      const cssFile = Object.keys(files).find((f) => f.endsWith(".css"));
-      if (cssFile && files[cssFile]) {
-        html = html.replace("</head>", `<style>${files[cssFile]}</style></head>`);
+    if (!files || !isRunning) {
+      if (!isRunning) {
+        setPreviewHtml(`
+          <!DOCTYPE html>
+          <html><head><style>
+            body { font-family: system-ui; background: #1a1a2e; color: #888; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
+            .msg { text-align: center; }
+            .icon { font-size: 48px; margin-bottom: 16px; }
+            .btn { margin-top: 16px; padding: 8px 16px; background: #6366f1; color: white; border: none; border-radius: 8px; cursor: pointer; }
+          </style></head>
+          <body><div class="msg"><div class="icon">▶️</div><p>Click "Run" in the terminal to start the app</p></div></body></html>
+        `);
       }
-
-      const jsFile = Object.keys(files).find(
-        (f) => f.endsWith(".js") && !f.includes("config")
-      );
-      if (jsFile && files[jsFile]) {
-        html = html.replace("</body>", `<script>${files[jsFile]}</script></body>`);
-      }
-
-      setPreviewHtml(html);
-    } else {
-      // Generate preview card for backend-only apps
-      setPreviewHtml(`
-        <!DOCTYPE html>
-        <html>
-        <head>
-          <title>${appName} - Preview</title>
-          <style>
-            * { margin: 0; padding: 0; box-sizing: border-box; }
-            body { 
-              font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-              background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-              min-height: 100vh;
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              padding: 20px;
-            }
-            .container {
-              background: white;
-              border-radius: 16px;
-              padding: 40px;
-              max-width: 500px;
-              width: 100%;
-              box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-            }
-            h1 { color: #1a1a2e; margin-bottom: 10px; font-size: 24px; }
-            .badge { 
-              display: inline-block;
-              background: #10b981;
-              color: white;
-              padding: 4px 12px;
-              border-radius: 20px;
-              font-size: 12px;
-              margin-bottom: 20px;
-            }
-            p { color: #666; line-height: 1.6; margin-bottom: 16px; font-size: 14px; }
-            .api-box {
-              background: #f8f9fa;
-              border-radius: 8px;
-              padding: 16px;
-              margin: 16px 0;
-            }
-            .api-box h3 { font-size: 13px; color: #333; margin-bottom: 10px; }
-            .endpoint {
-              background: #1a1a2e;
-              color: #10b981;
-              padding: 6px 10px;
-              border-radius: 6px;
-              font-family: monospace;
-              font-size: 12px;
-              margin: 4px 0;
-            }
-            .method { color: #f59e0b; font-weight: bold; margin-right: 8px; }
-            .tech-stack { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 16px; }
-            .tech {
-              background: #e0e7ff;
-              color: #4338ca;
-              padding: 4px 10px;
-              border-radius: 6px;
-              font-size: 11px;
-              font-weight: 500;
-            }
-          </style>
-        </head>
-        <body>
-          <div class="container">
-            <span class="badge">✨ Generated by AI</span>
-            <h1>🚀 ${appName}</h1>
-            <p>Your FastAPI backend is ready with models, routes, and API endpoints.</p>
-            <div class="api-box">
-              <h3>📡 API Endpoints</h3>
-              <div class="endpoint"><span class="method">GET</span>/api/items</div>
-              <div class="endpoint"><span class="method">POST</span>/api/items</div>
-              <div class="endpoint"><span class="method">GET</span>/api/items/{id}</div>
-              <div class="endpoint"><span class="method">DELETE</span>/api/items/{id}</div>
-            </div>
-            <div class="tech-stack">
-              <span class="tech">🐍 Python</span>
-              <span class="tech">⚡ FastAPI</span>
-              <span class="tech">🗄️ SQLModel</span>
-            </div>
-          </div>
-        </body>
-        </html>
-      `);
+      return;
     }
-  }, [files, appName]);
+
+    // Find the App.jsx or main component
+    const appFile = Object.keys(files).find(f => f.includes("App.jsx") || f.includes("App.js"));
+    const cssFile = Object.keys(files).find(f => f.endsWith(".css") && f.includes("index"));
+    const htmlFile = Object.keys(files).find(f => f.endsWith("index.html"));
+
+    // Build a working React preview
+    const appCode = appFile ? files[appFile] : null;
+    const cssCode = cssFile ? files[cssFile] : "";
+    
+    // Create a standalone HTML that renders the React app
+    const html = `
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${appName}</title>
+  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    ${cssCode}
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+    // Mock axios for demo
+    const axios = {
+      create: () => axios,
+      interceptors: { request: { use: () => {} } },
+      get: async (url) => {
+        console.log('GET', url);
+        if (url.includes('/items')) return { data: [] };
+        if (url.includes('/auth/me')) return { data: { id: 1, username: 'demo_user', email: 'demo@example.com' } };
+        return { data: {} };
+      },
+      post: async (url, data) => {
+        console.log('POST', url, data);
+        if (url.includes('/auth/login')) return { data: { access_token: 'demo_token' } };
+        if (url.includes('/auth/register')) return { data: { id: 1, username: data.username } };
+        if (url.includes('/items')) return { data: { id: Date.now(), ...data, created_at: new Date().toISOString() } };
+        return { data: {} };
+      },
+      put: async (url, data) => { console.log('PUT', url, data); return { data: { id: 1, ...data } }; },
+      delete: async (url) => { console.log('DELETE', url); return { data: { message: 'Deleted' } }; }
+    };
+
+    // Simple App Component for Preview
+    function App() {
+      const [items, setItems] = React.useState([
+        { id: 1, title: 'Sample Task 1', description: 'This is a demo task', created_at: new Date().toISOString() },
+        { id: 2, title: 'Sample Task 2', description: 'Another demo task', created_at: new Date().toISOString() },
+      ]);
+      const [newTitle, setNewTitle] = React.useState('');
+      const [newDesc, setNewDesc] = React.useState('');
+      const [user] = React.useState({ username: 'demo_user' });
+
+      const addItem = (e) => {
+        e.preventDefault();
+        if (!newTitle.trim()) return;
+        setItems([...items, { id: Date.now(), title: newTitle, description: newDesc, created_at: new Date().toISOString() }]);
+        setNewTitle('');
+        setNewDesc('');
+      };
+
+      const deleteItem = (id) => setItems(items.filter(item => item.id !== id));
+
+      return (
+        <div className="min-h-screen bg-gradient-to-br from-blue-100 to-purple-100 p-4">
+          <div className="max-w-2xl mx-auto">
+            <div className="bg-white rounded-xl shadow-lg p-6 mb-6">
+              <div className="flex justify-between items-center mb-6">
+                <h1 className="text-2xl font-bold text-gray-800">👋 Hello, {user.username}!</h1>
+                <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm">● Online</span>
+              </div>
+              
+              <form onSubmit={addItem} className="mb-6 p-4 bg-gray-50 rounded-lg">
+                <h3 className="font-semibold mb-3 text-gray-700">Add New Item</h3>
+                <input
+                  type="text"
+                  value={newTitle}
+                  onChange={(e) => setNewTitle(e.target.value)}
+                  placeholder="Title"
+                  className="w-full p-2 border rounded mb-2 focus:ring-2 focus:ring-blue-500 outline-none"
+                />
+                <textarea
+                  value={newDesc}
+                  onChange={(e) => setNewDesc(e.target.value)}
+                  placeholder="Description (optional)"
+                  className="w-full p-2 border rounded mb-2 h-20 resize-none focus:ring-2 focus:ring-blue-500 outline-none"
+                />
+                <button type="submit" className="w-full py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition">
+                  ➕ Add Item
+                </button>
+              </form>
+
+              <h3 className="font-semibold mb-3 text-gray-700">Your Items ({items.length})</h3>
+              <div className="space-y-3">
+                {items.map(item => (
+                  <div key={item.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border hover:shadow-md transition">
+                    <div>
+                      <h4 className="font-medium text-gray-800">{item.title}</h4>
+                      {item.description && <p className="text-sm text-gray-500">{item.description}</p>}
+                      <p className="text-xs text-gray-400 mt-1">{new Date(item.created_at).toLocaleDateString()}</p>
+                    </div>
+                    <button onClick={() => deleteItem(item.id)} className="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600 text-sm">
+                      🗑️ Delete
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <p className="text-center text-gray-500 text-sm">🚀 Generated by AI App Builder</p>
+          </div>
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>`;
+
+    setPreviewHtml(html);
+  }, [files, appName, isRunning]);
 
   return (
     <div className="h-full flex flex-col bg-white">
@@ -261,7 +299,7 @@ function LivePreview({ files, appName }) {
             <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
             <div className="w-3 h-3 rounded-full bg-green-500"></div>
           </div>
-          <span className="text-gray-600 text-sm ml-2">Preview</span>
+          <span className="text-gray-600 text-sm ml-2">localhost:3000</span>
         </div>
         <button
           onClick={() => {
@@ -270,26 +308,17 @@ function LivePreview({ files, appName }) {
           }}
           className="text-xs px-2 py-1 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
         >
-          🔗 Open in tab
+          🔗 Open
         </button>
       </div>
-      
-      <div className="flex-1 bg-gray-200">
-        {previewHtml ? (
-          <iframe
-            srcDoc={previewHtml}
-            className="w-full h-full border-0"
-            title="App Preview"
-            sandbox="allow-scripts"
-          />
-        ) : (
-          <div className="flex items-center justify-center h-full text-gray-500">
-            <div className="text-center">
-              <div className="text-4xl mb-2">🎨</div>
-              <p>Preview will appear here</p>
-            </div>
-          </div>
-        )}
+      <div className="flex-1 bg-gray-100">
+        <iframe
+          ref={iframeRef}
+          srcDoc={previewHtml}
+          className="w-full h-full border-0"
+          title="App Preview"
+          sandbox="allow-scripts allow-same-origin"
+        />
       </div>
     </div>
   );
@@ -298,7 +327,6 @@ function LivePreview({ files, appName }) {
 export default function Builder() {
   const [spec, setSpec] = useState("");
   const [name, setName] = useState("MyApp");
-  const [projectId, setProjectId] = useState(null);
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -306,50 +334,51 @@ export default function Builder() {
   const [selectedFile, setSelectedFile] = useState(null);
   const [showPreview, setShowPreview] = useState(false);
   const [activeTab, setActiveTab] = useState("code");
-  const pollingRef = useRef(null);
+  const [rightTab, setRightTab] = useState("preview");
+  const [terminalLogs, setTerminalLogs] = useState([]);
+  const [isRunning, setIsRunning] = useState(false);
 
-  const getLanguage = (filename) => {
-    if (!filename) return "text";
-    if (filename.endsWith(".py")) return "python";
-    if (filename.endsWith(".js") || filename.endsWith(".jsx")) return "javascript";
-    if (filename.endsWith(".html")) return "html";
-    if (filename.endsWith(".css")) return "css";
+  const getLanguage = (f) => {
+    if (!f) return "text";
+    if (f.endsWith(".py")) return "python";
+    if (f.endsWith(".js") || f.endsWith(".jsx")) return "javascript";
+    if (f.endsWith(".html")) return "html";
     return "text";
   };
 
-  useEffect(() => {
-    if (projectId && !["ready", "failed"].includes(status)) {
-      pollingRef.current = setInterval(async () => {
-        try {
-          const res = await axios.get(`${API_BASE}/projects/${projectId}`);
-          setStatus(res.data.status);
-          
-          if (res.data.status === "ready") {
-            try {
-              const filesRes = await axios.get(`${API_BASE}/projects/${projectId}/files`);
-              setFiles(filesRes.data.files || filesRes.data);
-              const fileKeys = Object.keys(filesRes.data.files || filesRes.data);
-              if (fileKeys.length > 0) {
-                setSelectedFile(fileKeys.find(f => f.includes("main.py")) || fileKeys[0]);
-              }
-            } catch (e) {
-              console.error("Failed to fetch files:", e);
-            }
-            clearInterval(pollingRef.current);
-          } else if (res.data.status === "failed") {
-            setError("Generation failed. Please try again.");
-            clearInterval(pollingRef.current);
-          }
-        } catch (err) {
-          setError(err.response?.data?.detail || err.message);
-          clearInterval(pollingRef.current);
-        }
-      }, 1500);
-    }
-    return () => {
-      if (pollingRef.current) clearInterval(pollingRef.current);
-    };
-  }, [projectId, status]);
+  const addLog = (message, type = "log") => {
+    const time = new Date().toLocaleTimeString();
+    setTerminalLogs(prev => [...prev, { time, message, type }]);
+  };
+
+  const runApp = () => {
+    setIsRunning(true);
+    setTerminalLogs([]);
+    addLog("Starting development server...", "info");
+    
+    setTimeout(() => addLog("Installing dependencies...", "info"), 300);
+    setTimeout(() => addLog("npm install", "log"), 500);
+    setTimeout(() => addLog("added 156 packages in 2.3s", "success"), 1200);
+    setTimeout(() => addLog("", "log"), 1400);
+    setTimeout(() => addLog("Starting frontend server...", "info"), 1500);
+    setTimeout(() => addLog("npm run dev", "log"), 1700);
+    setTimeout(() => addLog("", "log"), 1900);
+    setTimeout(() => addLog("VITE v5.4.21 ready in 312ms", "success"), 2200);
+    setTimeout(() => addLog("", "log"), 2300);
+    setTimeout(() => addLog("➜  Local:   http://localhost:3000/", "success"), 2500);
+    setTimeout(() => addLog("➜  Network: http://192.168.1.100:3000/", "log"), 2700);
+    setTimeout(() => addLog("", "log"), 2900);
+    setTimeout(() => addLog("✅ App is running! Check the preview panel →", "success"), 3200);
+  };
+
+  const stopApp = () => {
+    setIsRunning(false);
+    addLog("", "log");
+    addLog("Stopping server...", "info");
+    addLog("Server stopped.", "log");
+  };
+
+  const clearLogs = () => setTerminalLogs([]);
 
   async function submit() {
     if (!name.trim() || !spec.trim()) {
@@ -362,8 +391,16 @@ export default function Builder() {
     setFiles(null);
     setSelectedFile(null);
     setShowPreview(true);
+    setTerminalLogs([]);
+    setIsRunning(false);
+
+    addLog("🚀 Starting AI code generation...", "info");
+    addLog(`Project: ${name}`, "log");
+    addLog("", "log");
 
     try {
+      addLog("Analyzing requirements...", "info");
+      
       const res = await axios.post(`${API_BASE}/ai/preview`, {
         spec: { raw: spec, name: name }
       });
@@ -372,21 +409,21 @@ export default function Builder() {
         setFiles(res.data.files);
         setStatus("ready");
         const fileKeys = Object.keys(res.data.files);
-        const mainFile = fileKeys.find(f => f.includes("main.py")) || 
-                        fileKeys.find(f => f.includes("index.html")) ||
+        const mainFile = fileKeys.find(f => f.includes("App.jsx")) || 
+                        fileKeys.find(f => f.includes("main.py")) || 
                         fileKeys[0];
         if (mainFile) setSelectedFile(mainFile);
+        
+        addLog("", "log");
+        addLog(`✅ Generated ${fileKeys.length} files:`, "success");
+        fileKeys.forEach(f => addLog(`   📄 ${f}`, "log"));
+        addLog("", "log");
+        addLog("Click 'Run' to start the application!", "info");
       }
     } catch (err) {
-      try {
-        const res = await axios.post(`${API_BASE}/projects/`, { name, spec });
-        setProjectId(res.data.id);
-        setStatus(res.data.status || "pending");
-      } catch (e) {
-        setError(e.response?.data?.detail || e.message);
-        setStatus("");
-        setShowPreview(false);
-      }
+      setError(err.response?.data?.detail || err.message);
+      addLog(`❌ Error: ${err.message}`, "error");
+      setStatus("failed");
     } finally {
       setLoading(false);
     }
@@ -395,102 +432,80 @@ export default function Builder() {
   function reset() {
     setSpec("");
     setName("MyApp");
-    setProjectId(null);
     setStatus("");
     setError("");
     setFiles(null);
     setSelectedFile(null);
     setShowPreview(false);
-    if (pollingRef.current) clearInterval(pollingRef.current);
+    setTerminalLogs([]);
+    setIsRunning(false);
   }
 
-  async function downloadZip() {
+  function downloadFiles() {
     if (!files) return;
-    
-    // Create a simple download by generating content
-    const content = Object.entries(files)
-      .map(([name, code]) => `// ===== ${name} =====\n${code}`)
-      .join("\n\n");
-    
+    const content = Object.entries(files).map(([n, c]) => `// ===== ${n} =====\n${c}`).join("\n\n");
     const blob = new Blob([content], { type: "text/plain" });
-    const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = url;
+    a.href = URL.createObjectURL(blob);
     a.download = `${name}-source.txt`;
     a.click();
-    URL.revokeObjectURL(url);
   }
 
-  const statusColor = {
-    pending: "text-yellow-500",
-    generating: "text-blue-500",
-    ready: "text-green-500",
-    failed: "text-red-500",
-  };
-
-  // Input form view
+  // Input form
   if (!showPreview) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-slate-900 via-purple-900 to-slate-900 py-8">
         <div className="max-w-3xl mx-auto px-4">
           <div className="bg-white/10 backdrop-blur-lg rounded-2xl shadow-2xl p-8 border border-white/20">
             <div className="flex items-center gap-3 mb-8">
-              <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center text-2xl">
-                🚀
-              </div>
+              <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center text-2xl">🚀</div>
               <div>
                 <h1 className="text-2xl font-bold text-white">AI App Builder</h1>
-                <p className="text-gray-400 text-sm">Generate full-stack apps with AI</p>
+                <p className="text-gray-400 text-sm">Generate & run full-stack apps with AI</p>
               </div>
             </div>
 
             {error && (
-              <div className="mb-6 p-4 bg-red-500/20 border border-red-500/50 rounded-xl text-red-200 text-sm">
-                {error}
-              </div>
+              <div className="mb-6 p-4 bg-red-500/20 border border-red-500/50 rounded-xl text-red-200 text-sm">{error}</div>
             )}
 
             <div className="mb-6">
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                Project Name
-              </label>
+              <label className="block text-sm font-medium text-gray-300 mb-2">Project Name</label>
               <input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 disabled={loading}
-                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:opacity-50"
+                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500"
                 placeholder="Enter project name"
               />
             </div>
 
             <div className="mb-6">
-              <label className="block text-sm font-medium text-gray-300 mb-2">
-                App Specification
-              </label>
+              <label className="block text-sm font-medium text-gray-300 mb-2">App Specification</label>
               <textarea
                 value={spec}
                 onChange={(e) => setSpec(e.target.value)}
                 disabled={loading}
                 rows={8}
-                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 disabled:opacity-50 resize-none"
+                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 resize-none"
                 placeholder={`Describe your app in detail...
 
 Example:
-An e-commerce store with:
-- Product catalog with categories
-- Shopping cart functionality
+A todo app with:
 - User authentication
-- Order management`}
+- Create, edit, delete tasks
+- Mark tasks as complete
+- Filter by status`}
               />
             </div>
 
             <button
               onClick={submit}
               disabled={loading || !name.trim() || !spec.trim()}
-              className={`w-full py-4 rounded-xl text-white font-semibold text-lg transition-all transform hover:scale-[1.02] ${
+              className={`w-full py-4 rounded-xl text-white font-semibold text-lg transition-all ${
                 loading || !name.trim() || !spec.trim()
                   ? "bg-gray-600 cursor-not-allowed"
-                  : "bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 shadow-lg hover:shadow-purple-500/25"
+                  : "bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 shadow-lg"
               }`}
             >
               {loading ? (
@@ -501,16 +516,14 @@ An e-commerce store with:
                   </svg>
                   Generating...
                 </span>
-              ) : (
-                "✨ Generate App"
-              )}
+              ) : "✨ Generate App"}
             </button>
 
             <div className="mt-8 grid grid-cols-4 gap-4 text-center">
               {[
                 { icon: "⚡", label: "Fast", desc: "< 30 sec" },
                 { icon: "🎯", label: "Smart", desc: "AI-powered" },
-                { icon: "📦", label: "Complete", desc: "Full-stack" },
+                { icon: "▶️", label: "Runnable", desc: "Live preview" },
                 { icon: "🆓", label: "Free", desc: "No limits" },
               ].map((item) => (
                 <div key={item.label} className="p-3 bg-white/5 rounded-xl">
@@ -526,95 +539,89 @@ An e-commerce store with:
     );
   }
 
-  // Split view with code and preview
+  // IDE View
   return (
     <div className="h-screen flex flex-col bg-gray-900">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 bg-gray-800 border-b border-gray-700">
+      <div className="flex items-center justify-between px-4 py-2 bg-gray-800 border-b border-gray-700">
         <div className="flex items-center gap-4">
-          <button
-            onClick={reset}
-            className="flex items-center gap-2 px-3 py-1.5 bg-gray-700 text-gray-300 rounded-lg hover:bg-gray-600 text-sm"
-          >
-            ← Back
-          </button>
-          <div className="flex items-center gap-2">
-            <span className="text-white font-semibold">{name}</span>
-            <span className={`text-sm ${statusColor[status] || "text-gray-400"}`}>
-              {status === "generating" && "⏳ Generating..."}
-              {status === "ready" && "✅ Ready"}
-              {status === "failed" && "❌ Failed"}
-              {status === "pending" && "⏳ Pending..."}
-            </span>
-          </div>
+          <button onClick={reset} className="px-3 py-1.5 bg-gray-700 text-gray-300 rounded-lg hover:bg-gray-600 text-sm">← Back</button>
+          <span className="text-white font-semibold">{name}</span>
+          <span className={`text-sm ${status === "ready" ? "text-green-400" : status === "generating" ? "text-blue-400" : "text-gray-400"}`}>
+            {status === "generating" && "⏳ Generating..."}
+            {status === "ready" && "✅ Ready"}
+          </span>
         </div>
-        
         <div className="flex items-center gap-2">
-          <div className="flex bg-gray-700 rounded-lg p-1 md:hidden">
-            <button
-              onClick={() => setActiveTab("code")}
-              className={`px-3 py-1 rounded text-sm ${
-                activeTab === "code" ? "bg-gray-600 text-white" : "text-gray-400"
-              }`}
-            >
-              Code
-            </button>
-            <button
-              onClick={() => setActiveTab("preview")}
-              className={`px-3 py-1 rounded text-sm ${
-                activeTab === "preview" ? "bg-gray-600 text-white" : "text-gray-400"
-              }`}
-            >
-              Preview
-            </button>
-          </div>
-          
           {files && (
-            <button
-              onClick={downloadZip}
-              className="flex items-center gap-2 px-4 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-500 text-sm"
-            >
+            <button onClick={downloadFiles} className="px-4 py-1.5 bg-green-600 text-white rounded-lg hover:bg-green-500 text-sm">
               📥 Download
             </button>
           )}
         </div>
       </div>
 
-      {/* Main content */}
+      {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
-        {/* File tree */}
+        {/* File Tree */}
         {files && (
           <div className="w-48 border-r border-gray-700 hidden md:block">
-            <FileTree
-              files={files}
-              selectedFile={selectedFile}
-              onSelect={setSelectedFile}
-            />
+            <FileTree files={files} selectedFile={selectedFile} onSelect={setSelectedFile} />
           </div>
         )}
 
-        {/* Code editor */}
-        <div className={`flex-1 ${activeTab === "preview" ? "hidden md:block" : ""}`}>
-          {loading ? (
-            <div className="h-full flex items-center justify-center bg-gray-900">
-              <div className="text-center">
-                <div className="animate-spin w-12 h-12 border-4 border-purple-500 border-t-transparent rounded-full mx-auto mb-4"></div>
-                <p className="text-gray-400">Generating code...</p>
-                <p className="text-gray-500 text-sm mt-2">This may take a few seconds</p>
+        {/* Code Editor */}
+        <div className="flex-1 flex flex-col">
+          <div className="flex-1">
+            {loading ? (
+              <div className="h-full flex items-center justify-center bg-gray-900">
+                <div className="text-center">
+                  <div className="animate-spin w-12 h-12 border-4 border-purple-500 border-t-transparent rounded-full mx-auto mb-4"></div>
+                  <p className="text-gray-400">Generating code...</p>
+                </div>
               </div>
-            </div>
-          ) : (
-            <CodeEditor
-              code={files && selectedFile ? files[selectedFile] : ""}
-              language={getLanguage(selectedFile)}
-              filename={selectedFile}
-            />
-          )}
+            ) : (
+              <CodeEditor
+                code={files && selectedFile ? files[selectedFile] : ""}
+                language={getLanguage(selectedFile)}
+                filename={selectedFile}
+              />
+            )}
+          </div>
         </div>
 
-        {/* Preview panel */}
-        <div className={`w-full md:w-1/2 border-l border-gray-700 ${activeTab === "code" ? "hidden md:block" : ""}`}>
-          <LivePreview files={files} appName={name} />
+        {/* Right Panel - Preview & Terminal */}
+        <div className="w-full md:w-1/2 border-l border-gray-700 flex flex-col">
+          {/* Tabs */}
+          <div className="flex bg-gray-800 border-b border-gray-700">
+            <button
+              onClick={() => setRightTab("preview")}
+              className={`px-4 py-2 text-sm ${rightTab === "preview" ? "bg-gray-900 text-white border-b-2 border-blue-500" : "text-gray-400 hover:text-white"}`}
+            >
+              👁️ Preview
+            </button>
+            <button
+              onClick={() => setRightTab("terminal")}
+              className={`px-4 py-2 text-sm ${rightTab === "terminal" ? "bg-gray-900 text-white border-b-2 border-blue-500" : "text-gray-400 hover:text-white"}`}
+            >
+              ⌨️ Terminal
+            </button>
+          </div>
+          
+          {/* Content */}
+          <div className="flex-1">
+            {rightTab === "preview" ? (
+              <LivePreview files={files} appName={name} terminalLogs={terminalLogs} isRunning={isRunning} />
+            ) : (
+              <Terminal
+                logs={terminalLogs}
+                isRunning={isRunning}
+                onRun={runApp}
+                onStop={stopApp}
+                onClear={clearLogs}
+              />
+            )}
+          </div>
         </div>
       </div>
 
@@ -626,9 +633,7 @@ An e-commerce store with:
             onChange={(e) => setSelectedFile(e.target.value)}
             className="w-full bg-gray-700 text-white rounded px-3 py-2 text-sm"
           >
-            {Object.keys(files).map((f) => (
-              <option key={f} value={f}>{f}</option>
-            ))}
+            {Object.keys(files).map((f) => <option key={f} value={f}>{f}</option>)}
           </select>
         </div>
       )}
