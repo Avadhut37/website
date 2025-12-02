@@ -1,6 +1,7 @@
 """Project management endpoints."""
 import os
-from typing import Optional
+from datetime import datetime, timezone
+from typing import Optional, Dict
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, status
 from fastapi.responses import FileResponse
@@ -18,8 +19,16 @@ from ..schemas import (
     ProjectResponse,
 )
 from ..services.generator import start_generation_job
+from ..core.config import settings
+from pathlib import Path
+from pydantic import BaseModel
+from typing import Dict
 
 router = APIRouter()
+
+
+class ProjectFilesUpdate(BaseModel):
+    files: Dict[str, str]
 
 
 @router.post("/", response_model=ProjectCreateResponse, status_code=status.HTTP_201_CREATED)
@@ -117,6 +126,91 @@ def get_project(
         )
     
     return ProjectResponse.model_validate(project)
+
+
+@router.get("/{project_id}/files")
+def get_project_files(
+    project_id: int,
+    session: Session = Depends(get_session),
+    current_user: Optional[User] = Depends(get_optional_user),
+):
+    """Get all files for a project."""
+    project = session.exec(select(Project).where(Project.id == project_id)).first()
+    
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found"
+        )
+    
+    # Check ownership if authenticated
+    if current_user and project.owner_id != 0 and project.owner_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to access this project"
+        )
+        
+    project_dir = Path(settings.WORK_DIR) / str(project_id)
+    if not project_dir.exists():
+        return {}
+        
+    files = {}
+    # Walk directory
+    for path in project_dir.rglob("*"):
+        if path.is_file() and not path.name.startswith("."):
+            try:
+                rel_path = path.relative_to(project_dir).as_posix()
+                # Skip binary files or very large files if needed
+                if path.stat().st_size > 1000000: # 1MB limit
+                    continue
+                files[rel_path] = path.read_text(encoding="utf-8")
+            except Exception:
+                pass # Skip binary or unreadable files
+                
+    return files
+
+
+@router.put("/{project_id}/files")
+def update_project_files(
+    project_id: int,
+    payload: ProjectFilesUpdate,
+    session: Session = Depends(get_session),
+    current_user: Optional[User] = Depends(get_optional_user),
+):
+    """Update files for a project."""
+    project = session.exec(select(Project).where(Project.id == project_id)).first()
+    
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found"
+        )
+    
+    # Check ownership if authenticated
+    if current_user and project.owner_id != 0 and project.owner_id != current_user.id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Not authorized to access this project"
+        )
+    
+    project_dir = Path(settings.WORK_DIR) / str(project_id)
+    project_dir.mkdir(parents=True, exist_ok=True)
+    
+    for rel_path, content in payload.files.items():
+        # Security check: prevent directory traversal
+        if ".." in rel_path or rel_path.startswith("/"):
+            continue
+            
+        file_path = project_dir / rel_path
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        file_path.write_text(content, encoding="utf-8")
+        
+    # Update timestamp
+    project.updated_at = datetime.now(timezone.utc)
+    session.add(project)
+    session.commit()
+    
+    return {"message": "Files updated successfully"}
 
 
 @router.get("/{project_id}/download")

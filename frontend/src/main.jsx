@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createBrowserRouter, RouterProvider } from "react-router-dom";
 import Home from "./pages/Home";
 import Builder from "./pages/Builder";
+import ConnectionStatus from "./components/ConnectionStatus";
 import "./index.css";
 
 const qc = new QueryClient();
@@ -25,5 +26,6 @@ const router = createBrowserRouter(
 createRoot(document.getElementById("root")).render(
   <QueryClientProvider client={qc}>
     <RouterProvider router={router} />
+    <ConnectionStatus />
   </QueryClientProvider>
 );

@@ -7,7 +7,7 @@ from pathlib import Path
 
 from sqlmodel import select
 
-from ..ai.engine import call_llm_and_generate
+from ..ai.engine import get_ai_engine
 from ..core.config import settings
 from ..core.logging import logger
 from ..db import session_scope
@@ -18,7 +18,7 @@ BASE_WORK_DIR = Path(settings.WORK_DIR)
 BASE_WORK_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def start_generation_job(project_id: int) -> None:
+async def start_generation_job(project_id: int) -> None:
     """Generate project files in background."""
     logger.info(f"Starting generation for project {project_id}")
     
@@ -39,6 +39,11 @@ def start_generation_job(project_id: int) -> None:
         except json.JSONDecodeError:
             spec = {"raw": spec_str, "name": project_name}
 
+        # Extract image data if present
+        image_data = spec.get("image")
+        if image_data:
+            logger.info(f"📸 Image context found for project {project_id}")
+
         # Prepare output directory
         outdir = BASE_WORK_DIR / str(project_id)
         if outdir.exists():
@@ -47,7 +52,8 @@ def start_generation_job(project_id: int) -> None:
 
         # Generate files
         logger.info(f"Calling LLM for project {project_id}")
-        files = call_llm_and_generate(spec)
+        engine = get_ai_engine()
+        files = await engine.generate_project(spec, project_name, image_data=image_data)
         
         if not files:
             raise ValueError("No files generated")

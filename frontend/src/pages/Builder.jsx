@@ -1,370 +1,10 @@
 import React, { useState, useEffect, useRef } from "react";
-import axios from "axios";
-
-const API_BASE = import.meta.env.VITE_API_URL || "http://localhost:8000/api/v1";
-
-// Syntax highlighting
-function highlightCode(code, language) {
-  if (!code) return "";
-  let h = code.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-  
-  if (language === "python") {
-    h = h.replace(/\b(def|class|import|from|return|if|else|elif|for|while|try|except|with|as|async|await|True|False|None|and|or|not|in|is)\b/g, '<span class="text-purple-400">$1</span>');
-    h = h.replace(/(["'`])(?:(?!\1)[^\\]|\\.)*?\1/g, '<span class="text-green-400">$&</span>');
-    h = h.replace(/(#.*$)/gm, '<span class="text-gray-500">$1</span>');
-    h = h.replace(/(@\w+)/g, '<span class="text-yellow-400">$1</span>');
-  } else if (language === "javascript" || language === "jsx") {
-    h = h.replace(/\b(const|let|var|function|return|if|else|for|while|class|import|export|from|default|async|await|try|catch|new|this|true|false|null|undefined)\b/g, '<span class="text-purple-400">$1</span>');
-    h = h.replace(/(["'`])(?:(?!\1)[^\\]|\\.)*?\1/g, '<span class="text-green-400">$&</span>');
-    h = h.replace(/(\/\/.*$)/gm, '<span class="text-gray-500">$1</span>');
-  } else if (language === "html") {
-    h = h.replace(/(&lt;\/?[a-z]\w*)/gi, '<span class="text-blue-400">$1</span>');
-  }
-  return h;
-}
-
-// File Tree
-function FileTree({ files, selectedFile, onSelect }) {
-  const fileList = Object.keys(files).sort();
-  const getIcon = (f) => {
-    if (f.endsWith(".py")) return "🐍";
-    if (f.endsWith(".js") || f.endsWith(".jsx")) return "📜";
-    if (f.endsWith(".html")) return "🌐";
-    if (f.endsWith(".css")) return "🎨";
-    if (f.endsWith(".json")) return "📋";
-    return "📄";
-  };
-
-  return (
-    <div className="bg-gray-900 text-gray-300 p-2 overflow-y-auto h-full">
-      <div className="text-xs font-semibold text-gray-500 uppercase mb-2 px-2">Files</div>
-      {fileList.map((f) => (
-        <div
-          key={f}
-          onClick={() => onSelect(f)}
-          className={`flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer text-sm truncate ${
-            selectedFile === f ? "bg-blue-600 text-white" : "hover:bg-gray-800"
-          }`}
-        >
-          <span>{getIcon(f)}</span>
-          <span className="truncate">{f}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-// Code Editor
-function CodeEditor({ code, language, filename, onCodeChange }) {
-  const lines = code ? code.split("\n") : [];
-  
-  return (
-    <div className="h-full flex flex-col bg-gray-900">
-      <div className="flex items-center justify-between px-4 py-2 bg-gray-800 border-b border-gray-700">
-        <span className="text-gray-300 text-sm font-medium">{filename || "Select a file"}</span>
-        <button
-          onClick={() => navigator.clipboard.writeText(code)}
-          className="text-xs px-2 py-1 bg-gray-700 text-gray-300 rounded hover:bg-gray-600"
-        >
-          📋 Copy
-        </button>
-      </div>
-      <div className="flex-1 overflow-auto font-mono text-sm">
-        {code ? (
-          <div className="flex min-h-full">
-            <div className="bg-gray-800 text-gray-500 text-right py-4 px-2 select-none sticky left-0">
-              {lines.map((_, i) => <div key={i} className="leading-6">{i + 1}</div>)}
-            </div>
-            <pre className="flex-1 py-4 px-4 text-gray-300 overflow-x-auto">
-              <code dangerouslySetInnerHTML={{ __html: highlightCode(code, language) }} className="leading-6 block" />
-            </pre>
-          </div>
-        ) : (
-          <div className="flex items-center justify-center h-full text-gray-500">Select a file to view code</div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-// Terminal Panel
-function Terminal({ logs, isRunning, onRun, onStop, onClear }) {
-  const termRef = useRef(null);
-  
-  useEffect(() => {
-    if (termRef.current) {
-      termRef.current.scrollTop = termRef.current.scrollHeight;
-    }
-  }, [logs]);
-
-  return (
-    <div className="h-full flex flex-col bg-gray-950">
-      <div className="flex items-center justify-between px-3 py-2 bg-gray-800 border-b border-gray-700">
-        <div className="flex items-center gap-2">
-          <span className="text-gray-300 text-sm font-medium">⌨️ Terminal</span>
-          {isRunning && (
-            <span className="flex items-center gap-1 text-green-400 text-xs">
-              <span className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></span>
-              Running
-            </span>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          {!isRunning ? (
-            <button onClick={onRun} className="text-xs px-2 py-1 bg-green-600 text-white rounded hover:bg-green-500">
-              ▶ Run
-            </button>
-          ) : (
-            <button onClick={onStop} className="text-xs px-2 py-1 bg-red-600 text-white rounded hover:bg-red-500">
-              ⬛ Stop
-            </button>
-          )}
-          <button onClick={onClear} className="text-xs px-2 py-1 bg-gray-700 text-gray-300 rounded hover:bg-gray-600">
-            Clear
-          </button>
-        </div>
-      </div>
-      <div ref={termRef} className="flex-1 overflow-auto p-3 font-mono text-xs">
-        {logs.length === 0 ? (
-          <div className="text-gray-500">Click "Run" to start the application...</div>
-        ) : (
-          logs.map((log, i) => (
-            <div key={i} className={`${log.type === 'error' ? 'text-red-400' : log.type === 'success' ? 'text-green-400' : log.type === 'info' ? 'text-blue-400' : 'text-gray-300'}`}>
-              <span className="text-gray-500">[{log.time}]</span> {log.message}
-            </div>
-          ))
-        )}
-      </div>
-    </div>
-  );
-}
-
-// Live Preview with actual React rendering
-function LivePreview({ files, appName, terminalLogs, isRunning }) {
-  const [previewHtml, setPreviewHtml] = useState("");
-  const iframeRef = useRef(null);
-
-  useEffect(() => {
-    // If not running, show the "click run" message
-    if (!isRunning) {
-      setPreviewHtml(`
-        <!DOCTYPE html>
-        <html><head><style>
-          body { font-family: system-ui; background: #1a1a2e; color: #888; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
-          .msg { text-align: center; }
-          .icon { font-size: 48px; margin-bottom: 16px; }
-        </style></head>
-        <body><div class="msg"><div class="icon">▶️</div><p>Click "Run" in the terminal to start the app</p></div></body></html>
-      `);
-      return;
-    }
-    
-    // If running but no files yet, show loading state
-    if (!files) {
-      setPreviewHtml(`
-        <!DOCTYPE html>
-        <html><head><style>
-          body { font-family: system-ui; background: #1a1a2e; color: #888; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; }
-          .msg { text-align: center; }
-          .spinner { width: 48px; height: 48px; border: 4px solid #333; border-top-color: #6366f1; border-radius: 50%; animation: spin 1s linear infinite; }
-          @keyframes spin { to { transform: rotate(360deg); } }
-        </style></head>
-        <body><div class="msg"><div class="spinner"></div><p style="margin-top: 16px;">Generating code...</p></div></body></html>
-      `);
-      return;
-    }
-
-    // Find the generated frontend files
-    const appFile = Object.keys(files).find(f => 
-      (f.includes("frontend") || f.includes("src")) && 
-      (f.includes("App.jsx") || f.includes("App.js") || f.endsWith("App.jsx") || f.endsWith("App.js"))
-    );
-    const cssFile = Object.keys(files).find(f => 
-      (f.includes("frontend") || f.includes("src")) && 
-      (f.includes("index.css") || f.includes("App.css") || f.endsWith(".css"))
-    );
-    
-    console.log('🔍 Debug - Files:', Object.keys(files));
-    console.log('🔍 Debug - App file found:', appFile);
-    console.log('🔍 Debug - CSS file found:', cssFile);
-    
-    // Extract actual generated App code or use fallback
-    let appCode = appFile ? files[appFile] : null;
-    const cssCode = cssFile ? files[cssFile] : "";
-    
-    // If we have generated code, use it; otherwise create a fallback demo
-    if (appCode) {
-      // Clean up the generated code - remove imports that won't work in browser
-      appCode = appCode
-        .replace(/import\s+.*?from\s+['"].*?['"]\s*;?\s*/g, '')
-        .replace(/export\s+default\s+/g, '');
-    }
-    
-    // Create a standalone HTML that renders the React app
-    const html = `
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${appName}</title>
-  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
-  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: system-ui, -apple-system, sans-serif; }
-    ${cssCode}
-  </style>
-</head>
-<body>
-  <div id="root"></div>
-  <script type="text/babel">
-    // Mock axios for frontend demo
-    const axios = {
-      create: () => axios,
-      interceptors: { request: { use: () => {} } },
-      get: async (url) => {
-        console.log('🔵 GET', url);
-        if (url.includes('/items') || url.includes('/todos')) return { data: [] };
-        if (url.includes('/auth/me')) return { data: { id: 1, username: 'demo_user', email: 'demo@example.com' } };
-        return { data: {} };
-      },
-      post: async (url, data) => {
-        console.log('🟢 POST', url, data);
-        if (url.includes('/auth/login')) return { data: { access_token: 'demo_token' } };
-        if (url.includes('/auth/register')) return { data: { id: 1, username: data.username } };
-        if (url.includes('/items') || url.includes('/todos')) {
-          return { data: { id: Date.now(), ...data, created_at: new Date().toISOString() } };
-        }
-        return { data: { id: Date.now(), ...data } };
-      },
-      put: async (url, data) => { 
-        console.log('🟡 PUT', url, data); 
-        return { data: { id: 1, ...data, updated_at: new Date().toISOString() } }; 
-      },
-      delete: async (url) => { 
-        console.log('🔴 DELETE', url); 
-        return { data: { message: 'Deleted successfully' } }; 
-      }
-    };
-
-    ${appCode || `
-    // Fallback demo app
-    function App() {
-      const [items, setItems] = React.useState([
-        { id: 1, title: 'Sample Item 1', description: 'This is a demo', created_at: new Date().toISOString() },
-        { id: 2, title: 'Sample Item 2', description: 'Another demo', created_at: new Date().toISOString() },
-      ]);
-      const [newTitle, setNewTitle] = React.useState('');
-      const [newDesc, setNewDesc] = React.useState('');
-
-      const addItem = (e) => {
-        e.preventDefault();
-        if (!newTitle.trim()) return;
-        setItems([...items, { id: Date.now(), title: newTitle, description: newDesc, created_at: new Date().toISOString() }]);
-        setNewTitle('');
-        setNewDesc('');
-      };
-
-      const deleteItem = (id) => setItems(items.filter(item => item.id !== id));
-
-      return (
-        <div className="min-h-screen bg-gradient-to-br from-blue-100 to-purple-100 p-4">
-          <div className="max-w-2xl mx-auto">
-            <div className="bg-white rounded-xl shadow-lg p-6">
-              <h1 className="text-2xl font-bold text-gray-800 mb-6">${appName}</h1>
-              <form onSubmit={addItem} className="mb-6 p-4 bg-gray-50 rounded-lg">
-                <input
-                  type="text"
-                  value={newTitle}
-                  onChange={(e) => setNewTitle(e.target.value)}
-                  placeholder="Title"
-                  className="w-full p-2 border rounded mb-2 focus:ring-2 focus:ring-blue-500 outline-none"
-                />
-                <textarea
-                  value={newDesc}
-                  onChange={(e) => setNewDesc(e.target.value)}
-                  placeholder="Description"
-                  className="w-full p-2 border rounded mb-2 h-20 resize-none focus:ring-2 focus:ring-blue-500 outline-none"
-                />
-                <button type="submit" className="w-full py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
-                  Add Item
-                </button>
-              </form>
-              <div className="space-y-3">
-                {items.map(item => (
-                  <div key={item.id} className="flex justify-between items-center p-4 bg-gray-50 rounded-lg border">
-                    <div>
-                      <h4 className="font-medium">{item.title}</h4>
-                      <p className="text-sm text-gray-500">{item.description}</p>
-                    </div>
-                    <button onClick={() => deleteItem(item.id)} className="px-3 py-1 bg-red-500 text-white rounded hover:bg-red-600">
-                      Delete
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        </div>
-      );
-    }
-    `}
-
-    try {
-      ReactDOM.createRoot(document.getElementById('root')).render(<App />);
-    } catch (error) {
-      console.error('Preview render error:', error);
-      document.getElementById('root').innerHTML = \`
-        <div style="padding: 20px; background: #fee; color: #c00; border-radius: 8px; margin: 20px;">
-          <h3>⚠️ Preview Error</h3>
-          <p>\${error.message}</p>
-          <p style="font-size: 12px; color: #666; margin-top: 10px;">Check the browser console for details</p>
-        </div>
-      \`;
-    }
-  </script>
-</body>
-</html>`;
-
-    setPreviewHtml(html);
-  }, [files, appName, isRunning]);
-
-  return (
-    <div className="h-full flex flex-col bg-white">
-      <div className="flex items-center justify-between px-4 py-2 bg-gray-100 border-b">
-        <div className="flex items-center gap-2">
-          <div className="flex gap-1.5">
-            <div className="w-3 h-3 rounded-full bg-red-500"></div>
-            <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
-            <div className="w-3 h-3 rounded-full bg-green-500"></div>
-          </div>
-          <span className="text-gray-600 text-sm ml-2">localhost:3000</span>
-        </div>
-        <button
-          onClick={() => {
-            const win = window.open("", "_blank");
-            win.document.write(previewHtml);
-          }}
-          className="text-xs px-2 py-1 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
-        >
-          🔗 Open
-        </button>
-      </div>
-      <div className="flex-1 bg-gray-100">
-        <iframe
-          ref={iframeRef}
-          srcDoc={previewHtml}
-          className="w-full h-full border-0"
-          title="App Preview"
-          sandbox="allow-scripts allow-same-origin"
-        />
-      </div>
-    </div>
-  );
-}
+import FileTree from "../components/FileTree";
+import CodeEditor from "../components/CodeEditor";
+import Terminal from "../components/Terminal";
+import LivePreview from "../components/LivePreview";
+import WebContainerPreview from "../components/WebContainerPreview";
+import { apiClient, API_V1 } from "../config/api";
 
 export default function Builder() {
   const [spec, setSpec] = useState("");
@@ -378,7 +18,14 @@ export default function Builder() {
   const [activeTab, setActiveTab] = useState("code");
   const [rightTab, setRightTab] = useState("preview");
   const [terminalLogs, setTerminalLogs] = useState([]);
+  const [editInstruction, setEditInstruction] = useState("");
+  const [isEditing, setIsEditing] = useState(false);
+  const [projectId, setProjectId] = useState(null);
   const [isRunning, setIsRunning] = useState(false);
+  const [useWebContainer, setUseWebContainer] = useState(false);
+  const [imagePreview, setImagePreview] = useState(null);
+  const fileInputRef = useRef(null);
+  const editFileInputRef = useRef(null);
 
   const getLanguage = (f) => {
     if (!f) return "text";
@@ -422,6 +69,17 @@ export default function Builder() {
 
   const clearLogs = () => setTerminalLogs([]);
 
+  const handleImageUpload = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setImagePreview(reader.result);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   async function submit() {
     if (!name.trim() || !spec.trim()) {
       setError("Name and specification are required");
@@ -435,39 +93,151 @@ export default function Builder() {
     setShowPreview(true);
     setTerminalLogs([]);
     setIsRunning(false);
+    setProjectId(null);
 
     addLog("🚀 Starting AI code generation...", "info");
     addLog(`Project: ${name}`, "log");
+    if (imagePreview) addLog("📸 Image context attached", "info");
     addLog("", "log");
 
     try {
-      addLog("Analyzing requirements...", "info");
+      addLog("Creating project...", "info");
       
-      const res = await axios.post(`${API_BASE}/ai/preview`, {
-        spec: { raw: spec, name: name }
+      // 1. Create Project
+      const createRes = await apiClient.post('/projects/', {
+        name: name,
+        spec: JSON.stringify({ 
+          raw: spec, 
+          name: name,
+          image: imagePreview // Pass image in spec for now, or handle in backend separately
+        })
       });
       
-      if (res.data.files) {
-        setFiles(res.data.files);
-        setStatus("ready");
-        const fileKeys = Object.keys(res.data.files);
-        const mainFile = fileKeys.find(f => f.includes("App.jsx")) || 
-                        fileKeys.find(f => f.includes("main.py")) || 
-                        fileKeys[0];
-        if (mainFile) setSelectedFile(mainFile);
-        
-        addLog("", "log");
-        addLog(`✅ Generated ${fileKeys.length} files:`, "success");
-        fileKeys.forEach(f => addLog(`   📄 ${f}`, "log"));
-        addLog("", "log");
-        addLog("Click 'Run' to start the application!", "info");
-      }
+      // Note: The backend currently expects image in the payload, not in the spec JSON string for the project creation.
+      // However, the generation job runs in background.
+      // We need to update the backend to handle image in the generation job if it's passed in the spec.
+      // OR we can pass it to the preview endpoint if we were using that.
+      // But here we are using the async project generation flow.
+      
+      // Wait! The `start_generation_job` in backend reads the spec string.
+      // If I put the image in the spec string, it might be too large for the DB text field?
+      // `spec` is a string in the DB.
+      // Base64 images can be large.
+      
+      // Let's check the backend `Project` model. `spec` is `str`.
+      // SQLite `TEXT` can hold large strings, but it's not ideal.
+      // But for a prototype, it's fine.
+      
+      // Actually, I should probably use the `preview` endpoint for immediate feedback if I want to use the image, 
+      // OR update the `create_project` endpoint to accept an image separately and store it.
+      
+      // For now, let's stick to the `preview` endpoint for the initial generation if an image is present?
+      // No, the user expects the project flow.
+      
+      // Let's assume the backend `start_generation_job` parses the spec JSON and extracts the image if present.
+      // I need to update `backend/app/services/generator.py` to handle this.
+      
+      const pid = createRes.data.id;
+      setProjectId(pid);
+      addLog(`Project created (ID: ${pid})`, "success");
+      addLog("Waiting for generation...", "log");
+      
+      // 2. Poll for completion
+      let attempts = 0;
+      const maxAttempts = 120; // 2 minutes timeout
+      
+      const pollInterval = setInterval(async () => {
+        attempts++;
+        try {
+          const statusRes = await apiClient.get(`/projects/${pid}`);
+          const pStatus = statusRes.data.status;
+          
+          if (pStatus === 'ready') {
+            clearInterval(pollInterval);
+            addLog("Generation complete!", "success");
+            
+            // 3. Fetch files
+            const filesRes = await apiClient.get(`/projects/${pid}/files`);
+            setFiles(filesRes.data);
+            setStatus("ready");
+            setIsRunning(true); // Auto-start preview
+            
+            const fileKeys = Object.keys(filesRes.data);
+            const mainFile = fileKeys.find(f => f.includes("App.jsx")) || 
+                            fileKeys.find(f => f.includes("main.py")) || 
+                            fileKeys[0];
+            if (mainFile) setSelectedFile(mainFile);
+            
+            addLog("", "log");
+            addLog(`✅ Generated ${fileKeys.length} files:`, "success");
+            fileKeys.forEach(f => addLog(`   📄 ${f}`, "log"));
+            addLog("", "log");
+            addLog("Click 'Run' to start the application!", "info");
+            setLoading(false);
+          } else if (pStatus === 'failed') {
+            clearInterval(pollInterval);
+            throw new Error("Generation failed on server");
+          } else {
+            if (attempts % 5 === 0) addLog("Still generating...", "log");
+          }
+          
+          if (attempts >= maxAttempts) {
+            clearInterval(pollInterval);
+            throw new Error("Timeout waiting for generation");
+          }
+        } catch (err) {
+          clearInterval(pollInterval);
+          setError(err.message);
+          setLoading(false);
+          setStatus("failed");
+          addLog(`❌ Error: ${err.message}`, "error");
+        }
+      }, 1000);
+
     } catch (err) {
       setError(err.response?.data?.detail || err.message);
       addLog(`❌ Error: ${err.message}`, "error");
       setStatus("failed");
-    } finally {
       setLoading(false);
+    }
+  }
+
+  async function submitEdit() {
+    if (!editInstruction.trim()) return;
+    
+    setIsEditing(true);
+    addLog(`📝 Applying edit: "${editInstruction}"`, "info");
+    if (imagePreview) addLog("📸 Image context attached", "info");
+    
+    try {
+      const res = await apiClient.post('/ai/edit', {
+        files: files,
+        instruction: editInstruction,
+        project_name: name,
+        project_id: projectId,
+        image: imagePreview
+      });
+      
+      if (res.data.files) {
+        // Merge new files with existing ones
+        setFiles(prev => ({ ...prev, ...res.data.files }));
+        
+        const changedFiles = Object.keys(res.data.files);
+        addLog(`✅ Modified ${changedFiles.length} files:`, "success");
+        changedFiles.forEach(f => addLog(`   📝 ${f}`, "log"));
+        
+        // If current file was changed, refresh it
+        if (selectedFile && changedFiles.includes(selectedFile)) {
+          // Force refresh by briefly clearing selection (optional, React handles state update)
+        }
+        
+        setEditInstruction("");
+        setImagePreview(null); // Clear image after edit
+      }
+    } catch (err) {
+      addLog(`❌ Edit failed: ${err.message}`, "error");
+    } finally {
+      setIsEditing(false);
     }
   }
 
@@ -481,6 +251,7 @@ export default function Builder() {
     setShowPreview(false);
     setTerminalLogs([]);
     setIsRunning(false);
+    setImagePreview(null);
   }
 
   function downloadFiles() {
@@ -524,13 +295,14 @@ export default function Builder() {
 
             <div className="mb-6">
               <label className="block text-sm font-medium text-gray-300 mb-2">App Specification</label>
-              <textarea
-                value={spec}
-                onChange={(e) => setSpec(e.target.value)}
-                disabled={loading}
-                rows={8}
-                className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 resize-none"
-                placeholder={`Describe your app in detail...
+              <div className="relative">
+                <textarea
+                  value={spec}
+                  onChange={(e) => setSpec(e.target.value)}
+                  disabled={loading}
+                  rows={8}
+                  className="w-full px-4 py-3 bg-white/10 border border-white/20 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 resize-none"
+                  placeholder={`Describe your app in detail...
 
 Example:
 A todo app with:
@@ -538,6 +310,32 @@ A todo app with:
 - Create, edit, delete tasks
 - Mark tasks as complete
 - Filter by status`}
+                />
+                <button 
+                  onClick={() => fileInputRef.current?.click()}
+                  className="absolute bottom-3 right-3 p-2 bg-gray-700/50 hover:bg-gray-600/50 rounded-lg text-gray-300 hover:text-white transition-colors"
+                  title="Upload screenshot/mockup"
+                >
+                  📷
+                </button>
+              </div>
+              {imagePreview && (
+                <div className="mt-2 relative inline-block group">
+                  <img src={imagePreview} alt="Context" className="h-20 rounded-lg border border-gray-600 object-cover" />
+                  <button 
+                    onClick={() => { setImagePreview(null); if(fileInputRef.current) fileInputRef.current.value = ''; }}
+                    className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs shadow-lg opacity-0 group-hover:opacity-100 transition-opacity"
+                  >
+                    ×
+                  </button>
+                </div>
+              )}
+              <input 
+                type="file" 
+                ref={fileInputRef} 
+                onChange={handleImageUpload} 
+                className="hidden" 
+                accept="image/*" 
               />
             </div>
 
@@ -605,10 +403,71 @@ A todo app with:
 
       {/* Main Content */}
       <div className="flex-1 flex overflow-hidden">
-        {/* File Tree */}
+        {/* File Tree & AI Edit */}
         {files && (
-          <div className="w-48 border-r border-gray-700 hidden md:block">
-            <FileTree files={files} selectedFile={selectedFile} onSelect={setSelectedFile} />
+          <div className="w-64 border-r border-gray-700 hidden md:flex flex-col bg-gray-900">
+            <div className="flex-1 overflow-y-auto">
+              <FileTree files={files} selectedFile={selectedFile} onSelect={setSelectedFile} />
+            </div>
+            
+            {/* AI Edit Input */}
+            <div className="p-3 border-t border-gray-700 bg-gray-800">
+              <label className="block text-xs font-medium text-blue-400 mb-2">✨ AI Magic Edit</label>
+              <div className="relative">
+                <textarea
+                  value={editInstruction}
+                  onChange={(e) => setEditInstruction(e.target.value)}
+                  disabled={isEditing}
+                  placeholder="e.g. Change button color to red..."
+                  className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm placeholder-gray-500 focus:outline-none focus:border-blue-500 resize-none mb-2 pr-8"
+                  rows={3}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      submitEdit();
+                    }
+                  }}
+                />
+                <button 
+                  onClick={() => editFileInputRef.current?.click()}
+                  className="absolute bottom-4 right-2 text-gray-400 hover:text-white p-1 rounded hover:bg-gray-700"
+                  title="Upload reference image"
+                >
+                  📷
+                </button>
+              </div>
+              
+              {imagePreview && (
+                <div className="mb-2 relative inline-block group">
+                  <img src={imagePreview} alt="Context" className="h-16 rounded border border-gray-600 object-cover" />
+                  <button 
+                    onClick={() => { setImagePreview(null); if(editFileInputRef.current) editFileInputRef.current.value = ''; }}
+                    className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-4 h-4 flex items-center justify-center text-[10px] shadow-lg"
+                  >
+                    ×
+                  </button>
+                </div>
+              )}
+              <input 
+                type="file" 
+                ref={editFileInputRef} 
+                onChange={handleImageUpload} 
+                className="hidden" 
+                accept="image/*" 
+              />
+
+              <button
+                onClick={submitEdit}
+                disabled={isEditing || !editInstruction.trim()}
+                className={`w-full py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                  isEditing || !editInstruction.trim()
+                    ? "bg-gray-700 text-gray-500 cursor-not-allowed"
+                    : "bg-blue-600 text-white hover:bg-blue-500"
+                }`}
+              >
+                {isEditing ? "Applying..." : "Apply Edit"}
+              </button>
+            </div>
           </div>
         )}
 
@@ -635,25 +494,52 @@ A todo app with:
         {/* Right Panel - Preview & Terminal */}
         <div className="w-full md:w-1/2 border-l border-gray-700 flex flex-col">
           {/* Tabs */}
-          <div className="flex bg-gray-800 border-b border-gray-700">
-            <button
-              onClick={() => setRightTab("preview")}
-              className={`px-4 py-2 text-sm ${rightTab === "preview" ? "bg-gray-900 text-white border-b-2 border-blue-500" : "text-gray-400 hover:text-white"}`}
-            >
-              👁️ Preview
-            </button>
-            <button
-              onClick={() => setRightTab("terminal")}
-              className={`px-4 py-2 text-sm ${rightTab === "terminal" ? "bg-gray-900 text-white border-b-2 border-blue-500" : "text-gray-400 hover:text-white"}`}
-            >
-              ⌨️ Terminal
-            </button>
+          <div className="flex items-center justify-between bg-gray-800 border-b border-gray-700 pr-2">
+            <div className="flex">
+              <button
+                onClick={() => setRightTab("preview")}
+                className={`px-4 py-2 text-sm ${rightTab === "preview" ? "bg-gray-900 text-white border-b-2 border-blue-500" : "text-gray-400 hover:text-white"}`}
+              >
+                👁️ Preview
+              </button>
+              <button
+                onClick={() => setRightTab("terminal")}
+                className={`px-4 py-2 text-sm ${rightTab === "terminal" ? "bg-gray-900 text-white border-b-2 border-blue-500" : "text-gray-400 hover:text-white"}`}
+              >
+                ⌨️ Terminal
+              </button>
+            </div>
+            {rightTab === "preview" && (
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-500 hidden sm:inline">Engine:</span>
+                <div className="flex bg-gray-900 rounded-lg p-0.5 border border-gray-700">
+                  <button 
+                    onClick={() => setUseWebContainer(false)}
+                    className={`text-xs px-2 py-1 rounded-md transition-colors ${!useWebContainer ? 'bg-blue-600 text-white shadow' : 'text-gray-400 hover:text-white'}`}
+                    title="Fast preview using Babel (Client-side)"
+                  >
+                    ⚡ Fast
+                  </button>
+                  <button 
+                    onClick={() => setUseWebContainer(true)}
+                    className={`text-xs px-2 py-1 rounded-md transition-colors ${useWebContainer ? 'bg-blue-600 text-white shadow' : 'text-gray-400 hover:text-white'}`}
+                    title="Full Node.js environment (WebContainers)"
+                  >
+                    📦 Full
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
           
           {/* Content */}
-          <div className="flex-1">
+          <div className="flex-1 relative">
             {rightTab === "preview" ? (
-              <LivePreview files={files} appName={name} terminalLogs={terminalLogs} isRunning={isRunning} />
+              useWebContainer ? (
+                <WebContainerPreview files={files} onLog={(msg, type) => addLog(msg, type)} />
+              ) : (
+                <LivePreview files={files} appName={name} terminalLogs={terminalLogs} isRunning={isRunning} />
+              )
             ) : (
               <Terminal
                 logs={terminalLogs}

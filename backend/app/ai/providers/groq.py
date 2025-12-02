@@ -45,7 +45,7 @@ class GroqProvider(AIProvider):
         """Check if provider is available."""
         return bool(self.api_key)
     
-    def generate(
+    async def generate(
         self,
         prompt: str,
         system_prompt: Optional[str] = None,
@@ -78,8 +78,8 @@ class GroqProvider(AIProvider):
         try:
             logger.info(f"Calling Groq API with model {self.model}")
             
-            with httpx.Client(timeout=settings.LLM_TIMEOUT) as client:
-                response = client.post(url, json=payload, headers=headers)
+            async with httpx.AsyncClient(timeout=settings.LLM_TIMEOUT) as client:
+                response = await client.post(url, json=payload, headers=headers)
                 response.raise_for_status()
                 
                 data = response.json()

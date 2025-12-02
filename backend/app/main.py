@@ -50,9 +50,18 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, get_rate_limit_exceeded_handler())
 
 # CORS middleware
+# In development or Codespaces, allow all origins
+# In production, use specific origins from settings
+if settings.DEBUG:
+    # Development mode - allow all origins
+    cors_origins = ["*"]
+else:
+    # Production mode - use configured origins
+    cors_origins = settings.cors_origins_list
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins_list if not settings.DEBUG else ["*"],
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -102,7 +111,26 @@ def read_root(request: Request):
 @app.get("/health", tags=["Health"])
 def health_check():
     """Health check endpoint."""
-    return {"status": "ok", "version": settings.APP_VERSION}
+    import os
+    
+    # Detect if running in Codespaces
+    is_codespaces = os.getenv("CODESPACES") == "true"
+    codespace_name = os.getenv("CODESPACE_NAME", "")
+    
+    response = {
+        "status": "ok", 
+        "version": settings.APP_VERSION,
+        "environment": "codespaces" if is_codespaces else "local",
+    }
+    
+    if is_codespaces and codespace_name:
+        response["codespace"] = {
+            "name": codespace_name,
+            "backend_url": f"https://{codespace_name}-8000.app.github.dev",
+            "frontend_url": f"https://{codespace_name}-5173.app.github.dev",
+        }
+    
+    return response
 
 
 @app.get("/api/v1/status", tags=["Health"])

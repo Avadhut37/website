@@ -109,7 +109,7 @@ def extract_project_name(description: str) -> str:
     return name.title().replace('_', '') + "App" if name else "GeneratedApp"
 
 
-SYSTEM_PROMPT = """You are an expert full-stack developer AI. Generate COMPLETE, WORKING, APP-SPECIFIC code.
+SYSTEM_PROMPT = """You are an expert full-stack developer AI. Generate COMPLETE, WORKING, WORLD-CLASS CODE.
 
 ⚠️ CRITICAL: DO NOT generate generic CRUD templates. Analyze the request and generate CODE SPECIFIC to the app type.
 
@@ -127,11 +127,12 @@ RULES:
 3. Match the code to the SPECIFIC app requirements
 4. Include proper models, endpoints, and UI for the app type
 5. Use realistic sample data relevant to the app
+6. UI MUST BE BEAUTIFUL: Use Tailwind CSS with generous whitespace, shadows, and rounded corners.
 
 TECH STACK:
 - Backend: FastAPI + Pydantic
 - Frontend: React 18 + Vite
-- Styling: Inline styles (modern, clean)
+- Styling: Tailwind CSS (via CDN or inline styles if config not possible)
 - API: Axios
 
 For E-COMMERCE: Include Product model with price/image/category, Cart, CartItem

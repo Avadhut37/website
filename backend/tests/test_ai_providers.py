@@ -43,7 +43,8 @@ class TestAIProviders:
         provider = GeminiProvider()
         assert provider.is_available(), "Gemini provider not available"
     
-    def test_gemini_generation(self):
+    @pytest.mark.asyncio
+    async def test_gemini_generation(self):
         """Test Gemini can generate a response."""
         from app.ai.providers.gemini import GeminiProvider
         provider = GeminiProvider()
@@ -52,7 +53,7 @@ class TestAIProviders:
             pytest.skip("Gemini API key not configured")
         
         start = time.time()
-        response = provider.generate(
+        response = await provider.generate(
             prompt="Say 'Hello, I am Gemini!' in exactly those words.",
             max_tokens=50,
             temperature=0.1
@@ -78,7 +79,8 @@ class TestAIProviders:
         provider = GroqProvider()
         assert provider.is_available(), "Groq provider not available"
     
-    def test_groq_generation(self):
+    @pytest.mark.asyncio
+    async def test_groq_generation(self):
         """Test Groq can generate a response."""
         from app.ai.providers.groq import GroqProvider
         provider = GroqProvider()
@@ -87,7 +89,7 @@ class TestAIProviders:
             pytest.skip("Groq API key not configured")
         
         start = time.time()
-        response = provider.generate(
+        response = await provider.generate(
             prompt="Say 'Hello, I am Groq!' in exactly those words.",
             max_tokens=50,
             temperature=0.1
@@ -98,7 +100,8 @@ class TestAIProviders:
         assert len(response) > 0, "Groq returned empty response"
         print(f"\n✅ Groq responded in {duration:.2f}s: {response[:100]}...")
     
-    def test_groq_code_generation(self):
+    @pytest.mark.asyncio
+    async def test_groq_code_generation(self):
         """Test Groq can generate code (its specialty)."""
         from app.ai.providers.groq import GroqProvider
         provider = GroqProvider()
@@ -107,7 +110,7 @@ class TestAIProviders:
             pytest.skip("Groq API key not configured")
         
         start = time.time()
-        response = provider.generate(
+        response = await provider.generate(
             prompt="Write a Python function that adds two numbers. Return only the code.",
             max_tokens=200,
             temperature=0.1
@@ -132,7 +135,8 @@ class TestAIProviders:
         provider = CerebrasProvider()
         assert provider.is_available(), "Cerebras provider not available"
     
-    def test_cerebras_generation(self):
+    @pytest.mark.asyncio
+    async def test_cerebras_generation(self):
         """Test Cerebras can generate a response."""
         from app.ai.providers.cerebras import CerebrasProvider
         provider = CerebrasProvider()
@@ -141,7 +145,7 @@ class TestAIProviders:
             pytest.skip("Cerebras API key not configured")
         
         start = time.time()
-        response = provider.generate(
+        response = await provider.generate(
             prompt="Say 'Hello, I am Cerebras!' in exactly those words.",
             max_tokens=50,
             temperature=0.1
@@ -166,7 +170,8 @@ class TestAIProviders:
         provider = OpenRouterProvider()
         assert provider.is_available(), "OpenRouter provider not available"
     
-    def test_openrouter_generation(self):
+    @pytest.mark.asyncio
+    async def test_openrouter_generation(self):
         """Test OpenRouter can generate a response."""
         from app.ai.providers.openrouter import OpenRouterProvider
         provider = OpenRouterProvider(use_free_only=True)
@@ -175,7 +180,7 @@ class TestAIProviders:
             pytest.skip("OpenRouter API key not configured")
         
         start = time.time()
-        response = provider.generate(
+        response = await provider.generate(
             prompt="Say 'Hello, I am OpenRouter!' in exactly those words.",
             max_tokens=50,
             temperature=0.1
@@ -262,7 +267,7 @@ class TestAPIEndpoints:
 
 # ==================== STANDALONE RUNNER ====================
 
-def run_all_provider_tests():
+async def run_all_provider_tests():
     """Run all provider tests standalone (without pytest)."""
     print("\n" + "="*60)
     print("🧪 AI PROVIDER API TEST SUITE")
@@ -286,7 +291,7 @@ def run_all_provider_tests():
         print(f"\n{'─'*40}")
         print(f"Testing {name}...")
         try:
-            test_func()
+            await test_func()
             results["passed"] += 1
         except Exception as e:
             if "not configured" in str(e).lower() or "skip" in str(e).lower():
@@ -308,7 +313,8 @@ def run_all_provider_tests():
     return results["failed"] == 0
 
 
-def test_gemini():
+@pytest.mark.asyncio
+async def test_gemini():
     """Standalone Gemini test."""
     from app.ai.providers.gemini import GeminiProvider
     provider = GeminiProvider()
@@ -317,7 +323,7 @@ def test_gemini():
         raise Exception("Gemini API key not configured")
     
     start = time.time()
-    response = provider.generate(
+    response = await provider.generate(
         prompt="Respond with only: 'Gemini OK'",
         max_tokens=100,  # Gemini 2.5 needs more tokens for thinking
         temperature=0.1
@@ -330,7 +336,8 @@ def test_gemini():
     print(f"✅ Gemini: {duration:.2f}s - {response.strip()[:50]}")
 
 
-def test_groq():
+@pytest.mark.asyncio
+async def test_groq():
     """Standalone Groq test."""
     from app.ai.providers.groq import GroqProvider
     provider = GroqProvider()
@@ -339,7 +346,7 @@ def test_groq():
         raise Exception("Groq API key not configured")
     
     start = time.time()
-    response = provider.generate(
+    response = await provider.generate(
         prompt="Respond with only: 'Groq OK'",
         max_tokens=20,
         temperature=0.1
@@ -352,7 +359,8 @@ def test_groq():
     print(f"✅ Groq: {duration:.2f}s - {response.strip()[:50]}")
 
 
-def test_cerebras():
+@pytest.mark.asyncio
+async def test_cerebras():
     """Standalone Cerebras test."""
     from app.ai.providers.cerebras import CerebrasProvider
     provider = CerebrasProvider()
@@ -361,7 +369,7 @@ def test_cerebras():
         raise Exception("Cerebras API key not configured")
     
     start = time.time()
-    response = provider.generate(
+    response = await provider.generate(
         prompt="Respond with only: 'Cerebras OK'",
         max_tokens=20,
         temperature=0.1
@@ -374,7 +382,8 @@ def test_cerebras():
     print(f"✅ Cerebras: {duration:.2f}s - {response.strip()[:50]}")
 
 
-def test_openrouter():
+@pytest.mark.asyncio
+async def test_openrouter():
     """Standalone OpenRouter test."""
     from app.ai.providers.openrouter import OpenRouterProvider
     provider = OpenRouterProvider(use_free_only=True)
@@ -383,7 +392,7 @@ def test_openrouter():
         raise Exception("OpenRouter API key not configured")
     
     start = time.time()
-    response = provider.generate(
+    response = await provider.generate(
         prompt="Respond with only: 'OpenRouter OK'",
         max_tokens=20,
         temperature=0.1
@@ -398,5 +407,5 @@ def test_openrouter():
 
 if __name__ == "__main__":
     # Run standalone tests
-    success = run_all_provider_tests()
+    success = asyncio.run(run_all_provider_tests())
     sys.exit(0 if success else 1)

@@ -65,7 +65,7 @@ class OpenRouterProvider(AIProvider):
         """Check if OpenRouter is configured."""
         return bool(self.api_key)
     
-    def generate(
+    async def generate(
         self,
         prompt: str,
         system_prompt: Optional[str] = None,
@@ -73,7 +73,7 @@ class OpenRouterProvider(AIProvider):
         temperature: float = 0.7,
         **kwargs
     ) -> Optional[str]:
-        """Generate response using OpenRouter API (sync)."""
+        """Generate response using OpenRouter API (async)."""
         if not self.is_available():
             logger.warning("OpenRouter API key not configured")
             return None
@@ -93,8 +93,8 @@ class OpenRouterProvider(AIProvider):
         try:
             logger.info(f"Calling OpenRouter API with model {self.model}")
             
-            with httpx.Client(timeout=120) as client:
-                response = client.post(
+            async with httpx.AsyncClient(timeout=120) as client:
+                response = await client.post(
                     f"{self.base_url}/chat/completions",
                     headers=self.headers,
                     json=payload,
@@ -111,7 +111,7 @@ class OpenRouterProvider(AIProvider):
                     
                     # Try fallback to a different free model
                     if self.use_free_only and self.model in FREE_MODELS:
-                        return self._try_fallback_models(messages, max_tokens, temperature)
+                        return await self._try_fallback_models(messages, max_tokens, temperature)
                     
                     return None
                     
@@ -122,7 +122,7 @@ class OpenRouterProvider(AIProvider):
             logger.error(f"OpenRouter error: {e}")
             return None
     
-    def _try_fallback_models(
+    async def _try_fallback_models(
         self,
         messages: List[Dict],
         max_tokens: int,
@@ -142,8 +142,8 @@ class OpenRouterProvider(AIProvider):
             }
             
             try:
-                with httpx.Client(timeout=120) as client:
-                    response = client.post(
+                async with httpx.AsyncClient(timeout=120) as client:
+                    response = await client.post(
                         f"{self.base_url}/chat/completions",
                         headers=self.headers,
                         json=payload,

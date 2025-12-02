@@ -32,6 +32,9 @@ class AgentRole(str, Enum):
     BACKEND = "BACKEND"  # Backend specialist
     UIX = "UIX"        # Frontend specialist  
     DEBUG = "DEBUG"    # Error fixing specialist
+    EDIT = "EDIT"      # Iterative refinement specialist
+    QUALITY = "QUALITY" # Code quality & security specialist
+    TEST = "TEST"      # Test generation specialist
 
 
 class TaskType(str, Enum):
@@ -56,6 +59,7 @@ class AgentContext:
     """Shared context between agents."""
     project_spec: Dict[str, Any]
     project_name: str
+    image_data: Optional[str] = None
     messages: List[AgentMessage] = field(default_factory=list)
     files: Dict[str, str] = field(default_factory=dict)
     errors: List[str] = field(default_factory=list)
@@ -99,18 +103,19 @@ class BaseAgent:
         """Execute agent logic. Override in subclasses."""
         raise NotImplementedError
     
-    def _call_llm(self, prompt: str, max_tokens: int = 4096) -> Optional[str]:
+    async def _call_llm(self, prompt: str, max_tokens: int = 4096, **kwargs) -> Optional[str]:
         """Call the LLM with the prompt."""
         if not self.provider:
             logger.warning(f"[{self.ROLE}] No provider available")
             return None
         
         try:
-            return self.provider.generate(
+            return await self.provider.generate(
                 prompt=prompt,
                 system_prompt=self.SYSTEM_PROMPT,
                 max_tokens=max_tokens,
-                temperature=0.3
+                temperature=0.3,
+                **kwargs
             )
         except Exception as e:
             logger.error(f"[{self.ROLE}] LLM call failed: {e}")
@@ -256,21 +261,22 @@ class CoreAgent(BaseAgent):
     ROLE = AgentRole.CORE
     TASK_TYPE = TaskType.REASONING
     
-    SYSTEM_PROMPT = """You are CORE, the orchestrator agent for an app generation system.
+    SYSTEM_PROMPT = """You are CORE, the Lead Product Manager & Orchestrator.
 
-Your responsibilities:
-1. Analyze user requirements thoroughly
-2. Create a project plan with clear structure
-3. Decide which specialist agents to activate
-4. Coordinate the generation workflow
+Your Goal: Define a clear, high-value product vision and coordinate the engineering team to build it.
+
+Responsibilities:
+1. Requirement Analysis: Deeply understand the user's intent. Identify implicit requirements (e.g., "dashboard" implies charts, "social" implies auth).
+2. Product Planning: Create a detailed feature list and roadmap.
+3. Team Coordination: Assign tasks to ARCH, BACKEND, UIX, DEBUG, QUALITY, and TEST agents.
+4. File Structure: Define the initial project skeleton.
 
 Output Format:
 - Start with [AGENT: CORE]
-- Provide clear analysis and plan
-- List required agents: ARCH, BACKEND, UIX, DEBUG
-- Output JSON when generating file structure
+- Provide a professional Product Requirement Document (PRD) summary.
+- Output JSON with 'analysis', 'features', 'agents_needed', and 'file_structure'.
 
-Be decisive and efficient. Focus on practical, working solutions."""
+Think like a startup CTO. Prioritize user value and technical feasibility."""
     
     async def execute(self, context: AgentContext) -> AgentMessage:
         """Analyze request and create generation plan."""
@@ -303,7 +309,10 @@ Output a JSON object with:
     "priority": "What to build first"
 }}"""
 
-        response = self._call_llm(prompt)
+        if context.image_data:
+            prompt += "\n\n[IMAGE CONTEXT PROVIDED] The user has provided a UI design image. Ensure the plan accounts for the visual structure in the image."
+
+        response = await self._call_llm(prompt)
         
         if not response:
             # Fallback plan
@@ -354,13 +363,15 @@ class ArchAgent(BaseAgent):
     ROLE = AgentRole.ARCH
     TASK_TYPE = TaskType.REASONING
     
-    SYSTEM_PROMPT = """You are ARCH, the architecture specialist agent.
+    SYSTEM_PROMPT = """You are ARCH, the Systems Architect.
 
-Your responsibilities:
-1. Design clean, scalable system architecture
-2. Define clear API contracts (REST endpoints)
-3. Create data models and schemas
-4. Plan the file structure
+Your Goal: Design a scalable, maintainable, and clean architecture for a World-Class Application.
+
+Responsibilities:
+1. Structure: Define a folder structure that separates concerns (routes, controllers, services, models).
+2. API Contract: Define clear, consistent RESTful API endpoints.
+3. Data Modeling: Design efficient data models with proper relationships.
+4. Scalability: Plan for future growth (modular design).
 
 Tech Stack:
 - Backend: FastAPI, Pydantic, SQLModel
@@ -372,7 +383,7 @@ Output Format:
 - Provide architecture decisions
 - Output JSON for API specs and data models
 
-Focus on simplicity and best practices."""
+Focus on simplicity, best practices, and long-term maintainability."""
     
     async def execute(self, context: AgentContext) -> AgentMessage:
         """Design the architecture."""
@@ -414,7 +425,7 @@ Output JSON:
     }}
 }}"""
 
-        response = self._call_llm(prompt)
+        response = await self._call_llm(prompt)
         
         if response:
             try:
@@ -454,26 +465,35 @@ class BackendAgent(BaseAgent):
     ROLE = AgentRole.BACKEND
     TASK_TYPE = TaskType.CODE  # Uses Groq for fast code generation
     
-    SYSTEM_PROMPT = """You are BACKEND, the FastAPI/Python specialist agent.
+    SYSTEM_PROMPT = """You are BACKEND, the Senior Python Architect.
 
-Your responsibilities:
-1. Generate production-ready FastAPI code
-2. Create Pydantic models with validation
-3. Implement CRUD endpoints
-4. Add proper error handling and CORS
+Your Goal: Build a robust, secure, and scalable API backend.
 
-Code Standards:
-- Type hints everywhere
-- Docstrings for functions
-- Proper HTTP status codes
-- Input validation with Pydantic
+Responsibilities:
+1. API Design: Follow RESTful best practices.
+   - Use proper HTTP methods and status codes (201 Created, 404 Not Found, etc.).
+   - Standardize error responses.
+2. Code Quality:
+   - Type hints (mypy strict) are mandatory.
+   - Use Pydantic for rigorous data validation.
+   - Implement Dependency Injection where appropriate.
+3. Functionality:
+   - Full CRUD operations.
+   - In-memory persistence (simulated DB) that is thread-safe if possible.
+   - CORS configuration for frontend integration.
+   - Health check endpoint.
+
+Tech Stack:
+- FastAPI
+- Pydantic V2
+- Python 3.11+
 
 Output Format:
 - Start with [AGENT: BACKEND]
 - Output complete, runnable Python code
 - Use JSON format: {"filename": "code content"}
 
-Generate clean, professional code."""
+Write code that you would be proud to ship to production."""
     
     async def execute(self, context: AgentContext) -> AgentMessage:
         """Generate backend code."""
@@ -512,7 +532,7 @@ Output format:
     "backend/requirements.txt": "dependencies here"
 }}"""
 
-        response = self._call_llm(prompt, max_tokens=8192)
+        response = await self._call_llm(prompt, max_tokens=8192)
         
         # Parse JSON response using base class method
         artifacts = self._parse_json_response(response)
@@ -620,26 +640,34 @@ class UIXAgent(BaseAgent):
     ROLE = AgentRole.UIX
     TASK_TYPE = TaskType.UI_TEXT  # Uses Gemini for quality UI code
     
-    SYSTEM_PROMPT = """You are UIX, the frontend/React specialist agent.
+    SYSTEM_PROMPT = """You are UIX, the World-Class Frontend Specialist.
 
-Your responsibilities:
-1. Generate modern React components
-2. Create responsive, beautiful UI
-3. Implement state management (useState, useEffect)
-4. Integrate with backend API
+Your Goal: Create stunning, production-grade user interfaces that rival top SaaS products (like Linear, Vercel, Stripe).
+
+Responsibilities:
+1. UI Design: Use Tailwind CSS to create beautiful, clean, modern interfaces.
+   - Use generous whitespace, subtle shadows, and rounded corners.
+   - Ensure mobile responsiveness (mobile-first).
+   - Use a consistent color palette and typography.
+2. React Architecture:
+   - Use functional components with hooks.
+   - Implement proper state management.
+   - Handle Loading and Error states gracefully (show skeletons/spinners).
+3. Integration:
+   - Connect to the backend using Axios.
+   - Handle API errors and show user-friendly toasts/alerts.
 
 Tech Stack:
-- React 18 with hooks
-- Vite for bundling
-- Tailwind CSS for styling
-- Axios for API calls
+- React 18 + Vite
+- Tailwind CSS (Utility-first)
+- Axios
 
 Output Format:
 - Start with [AGENT: UIX]
 - Output complete, runnable React code
 - Use JSON format: {"filename": "code content"}
 
-Generate clean, user-friendly interfaces."""
+Do not output generic or ugly code. Make it shine."""
     
     async def execute(self, context: AgentContext) -> AgentMessage:
         """Generate frontend code."""
@@ -678,6 +706,7 @@ Requirements:
 - API integration with axios
 - Loading states and error handling
 - Full CRUD UI matching backend
+- Include lucide-react for icons in package.json
 
 Output format:
 {{
@@ -688,7 +717,15 @@ Output format:
     "frontend/src/App.jsx": "main component"
 }}"""
 
-        response = self._call_llm(prompt, max_tokens=8192)
+        if context.image_data:
+            prompt += "\n\n[IMAGE CONTEXT PROVIDED] Use the attached image as the PRIMARY reference for the UI design. Match the layout, colors, and structure exactly."
+
+        # Pass image_data to provider if supported (Gemini)
+        kwargs = {}
+        if context.image_data and self.provider and "gemini" in self.provider.name.lower():
+            kwargs["image_data"] = context.image_data
+
+        response = await self._call_llm(prompt, max_tokens=8192, **kwargs)
         artifacts = {}
         
         # Parse JSON response using base class method
@@ -834,6 +871,7 @@ Be thorough but efficient."""
     
     async def execute(self, context: AgentContext) -> AgentMessage:
         """Validate and fix generated code."""
+        
         # Collect all artifacts from other agents
         all_files = dict(context.files)
         
@@ -883,7 +921,7 @@ Output the fixed files as JSON:
 
 Only include files that needed fixing."""
 
-            response = self._call_llm(prompt, max_tokens=8192)
+            response = await self._call_llm(prompt, max_tokens=8192)
             
             if response:
                 try:
@@ -902,6 +940,204 @@ Only include files that needed fixing."""
         )
 
 
+class EditAgent(BaseAgent):
+    """
+    EDIT Agent - Iterative Refinement Specialist.
+    
+    Responsibilities:
+    - Analyze existing code
+    - Apply user instructions (diffs)
+    - Refactor code
+    """
+    
+    ROLE = AgentRole.EDIT
+    TASK_TYPE = TaskType.CODE
+    
+    SYSTEM_PROMPT = """You are EDIT, the iterative refinement specialist.
+
+Your responsibilities:
+1. Analyze the existing code provided
+2. Understand the user's modification request
+3. Apply the changes surgically (don't rewrite if not needed)
+4. Ensure the code remains functional
+
+Output Format:
+- Start with [AGENT: EDIT]
+- Output ONLY the files that need changing
+- Use JSON format: {"filename": "new complete content"}
+
+Be precise. Do not break existing functionality."""
+    
+    async def execute(self, context: AgentContext) -> AgentMessage:
+        """Apply edits to existing files."""
+        spec = context.project_spec
+        instruction = spec.get("instruction", "")
+        
+        # Collect all current files
+        all_files = dict(context.files)
+        
+        prompt = f"""Apply this modification to the project:
+
+INSTRUCTION: {instruction}
+
+CURRENT FILES:
+{json.dumps(all_files, indent=2)}
+
+Return ONLY the files that need to be changed as JSON:
+{{"filename": "new complete content"}}
+"""
+
+        response = await self._call_llm(prompt, max_tokens=8192)
+        artifacts = self._parse_json_response(response)
+        
+        return AgentMessage(
+            role=self.ROLE,
+            content=f"Applied edits to {len(artifacts) if artifacts else 0} files",
+            reasoning="Edits applied",
+            confidence=0.9,
+            artifacts=artifacts or {}
+        )
+
+
+class QualityAgent(BaseAgent):
+    """
+    QUALITY Agent - Code Quality & Security Specialist.
+    
+    Responsibilities:
+    - Static analysis (simulated)
+    - Security vulnerability scanning
+    - Code style enforcement
+    - Best practices review
+    """
+    
+    ROLE = AgentRole.QUALITY
+    TASK_TYPE = TaskType.CODE
+    
+    SYSTEM_PROMPT = """You are QUALITY, the code quality and security specialist.
+
+Your responsibilities:
+1. Review code for security vulnerabilities (SQLi, XSS, secrets)
+2. Enforce code style (PEP8, ESLint principles)
+3. Identify anti-patterns and bad practices
+4. Fix issues directly in the code
+
+Focus on:
+- Security: Input validation, auth checks, secret handling
+- Performance: N+1 queries, memory leaks
+- Style: Type hints, docstrings, variable naming
+
+Output Format:
+- Start with [AGENT: QUALITY]
+- List critical issues found
+- Output FIXED files as JSON: {"filename": "fixed content"}
+
+Be strict but practical."""
+    
+    async def execute(self, context: AgentContext) -> AgentMessage:
+        """Review and fix code quality issues."""
+        
+        # Collect all current files
+        all_files = dict(context.files)
+        
+        # Skip if no files
+        if not all_files:
+            return AgentMessage(role=self.ROLE, content="No files to review")
+
+        prompt = f"""Review and fix quality/security issues in these files:
+
+FILES:
+{json.dumps(all_files, indent=2)}
+
+Check for:
+1. Security: Hardcoded secrets, missing auth, injection risks
+2. Quality: Unused imports, missing type hints, poor error handling
+3. React: Missing keys in lists, dangerous dangerouslySetInnerHTML
+
+Output ONLY the files that needed fixing as JSON:
+{{"filename": "fixed complete content"}}
+"""
+
+        response = await self._call_llm(prompt, max_tokens=8192)
+        artifacts = self._parse_json_response(response)
+        
+        return AgentMessage(
+            role=self.ROLE,
+            content=f"Quality review complete. Fixed {len(artifacts) if artifacts else 0} files",
+            reasoning="Quality improvements applied",
+            confidence=0.9,
+            artifacts=artifacts or {}
+        )
+
+
+class TestAgent(BaseAgent):
+    """
+    TEST Agent - QA Automation Specialist.
+    
+    Responsibilities:
+    - Generate unit tests (pytest)
+    - Generate frontend tests (React Testing Library)
+    - Ensure critical paths are covered
+    """
+    
+    ROLE = AgentRole.TEST
+    TASK_TYPE = TaskType.CODE
+    
+    SYSTEM_PROMPT = """You are TEST, the QA automation specialist.
+
+Your responsibilities:
+1. Generate comprehensive unit tests
+2. Cover success and failure scenarios
+3. Mock external dependencies (DB, APIs)
+4. Ensure tests are runnable
+
+Tech Stack:
+- Backend: pytest, pytest-asyncio, httpx
+- Frontend: Vitest, React Testing Library
+
+Output Format:
+- Start with [AGENT: TEST]
+- Output test files as JSON: {"filename": "test content"}
+
+Generate high-quality, reliable tests."""
+    
+    async def execute(self, context: AgentContext) -> AgentMessage:
+        """Generate tests for the project."""
+        
+        # Collect all current files
+        all_files = dict(context.files)
+        
+        prompt = f"""Generate unit tests for this project:
+
+FILES:
+{json.dumps(all_files, indent=2)}
+
+Generate:
+1. backend/tests/test_main.py (API endpoints)
+2. backend/tests/test_models.py (Data models)
+3. frontend/src/__tests__/App.test.jsx (UI components)
+
+Requirements:
+- Use pytest for backend
+- Use Vitest/RTL for frontend
+- Mock database and external calls
+- Test happy paths and error cases
+
+Output JSON:
+{{"filename": "test code content"}}
+"""
+
+        response = await self._call_llm(prompt, max_tokens=8192)
+        artifacts = self._parse_json_response(response)
+        
+        return AgentMessage(
+            role=self.ROLE,
+            content=f"Generated {len(artifacts) if artifacts else 0} test files",
+            reasoning="Tests generated",
+            confidence=0.9,
+            artifacts=artifacts or {}
+        )
+
+
 class AgentOrchestrator:
     """
     Orchestrates multi-agent collaboration.
@@ -911,7 +1147,7 @@ class AgentOrchestrator:
     2. ARCH designs architecture
     3. BACKEND generates backend code
     4. UIX generates frontend code
-    5. DEBUG validates and fixes
+    5. DEBUG validates and fixes (with feedback loop)
     6. Combine all artifacts
     """
     
@@ -934,14 +1170,34 @@ class AgentOrchestrator:
             AgentRole.BACKEND: BackendAgent(providers),
             AgentRole.UIX: UIXAgent(providers),
             AgentRole.DEBUG: DebugAgent(providers),
+            AgentRole.EDIT: EditAgent(providers),
+            AgentRole.QUALITY: QualityAgent(providers),
+            AgentRole.TEST: TestAgent(providers),
         }
         
         logger.info(f"🤖 AgentOrchestrator initialized with {len(providers)} providers")
     
+    async def _run_agent(self, role: AgentRole, context: AgentContext) -> AgentMessage:
+        """Run a specific agent and update context."""
+        agent = self.agents.get(role)
+        if not agent:
+            raise ValueError(f"Agent {role} not found")
+            
+        logger.info(f"[{role.value}] Executing...")
+        message = await agent.execute(context)
+        context.messages.append(message)
+        
+        if message.artifacts:
+            context.files.update(message.artifacts)
+            logger.info(f"[{role.value}] Generated {len(message.artifacts)} files")
+            
+        return message
+
     async def generate_project(
         self,
         spec: Dict[str, Any],
-        project_name: Optional[str] = None
+        project_name: Optional[str] = None,
+        image_data: Optional[str] = None
     ) -> Dict[str, str]:
         """
         Generate a complete project using multi-agent collaboration.
@@ -949,6 +1205,7 @@ class AgentOrchestrator:
         Args:
             spec: Project specification
             project_name: Name of the project
+            image_data: Optional base64 encoded image
             
         Returns:
             Dictionary of filepath -> content
@@ -959,38 +1216,52 @@ class AgentOrchestrator:
         # Create shared context
         context = AgentContext(
             project_spec=spec,
-            project_name=project_name
+            project_name=project_name,
+            image_data=image_data
         )
         
         logger.info(f"🚀 Starting multi-agent generation for: {project_name}")
         
-        # Execute agents in order
-        agent_order = [
-            AgentRole.CORE,
-            AgentRole.ARCH, 
-            AgentRole.BACKEND,
-            AgentRole.UIX,
-            AgentRole.DEBUG
-        ]
-        
-        for role in agent_order:
-            agent = self.agents.get(role)
-            if not agent:
-                continue
+        try:
+            # 1. Plan & Design
+            await self._run_agent(AgentRole.CORE, context)
+            await self._run_agent(AgentRole.ARCH, context)
             
-            try:
-                logger.info(f"[{role.value}] Executing...")
-                message = await agent.execute(context)
-                context.messages.append(message)
+            # 2. Generate Code
+            await self._run_agent(AgentRole.BACKEND, context)
+            await self._run_agent(AgentRole.UIX, context)
+            
+            # 3. Intelligent Feedback Loop
+            max_retries = 2
+            for i in range(max_retries):
+                logger.info(f"🔄 Quality Control Loop {i+1}/{max_retries}")
                 
-                # Collect artifacts
-                if message.artifacts:
-                    context.files.update(message.artifacts)
-                    logger.info(f"[{role.value}] Generated {len(message.artifacts)} files")
+                # Run Debug Agent to find and fix issues
+                debug_msg = await self._run_agent(AgentRole.DEBUG, context)
                 
-            except Exception as e:
-                logger.error(f"[{role.value}] Failed: {e}")
-                context.errors.append(f"{role.value}: {str(e)}")
+                # Check if we are clean
+                if "found 0 issues" in debug_msg.content or "No issues found" in debug_msg.reasoning:
+                    logger.info("✅ Quality Check Passed")
+                    break
+                
+                # If issues were found, DebugAgent has already tried to fix them 
+                # and updated context.files via _run_agent -> context.files.update
+                if debug_msg.artifacts:
+                    logger.info(f"🛠️ Applied {len(debug_msg.artifacts)} fixes")
+                else:
+                    logger.warning("⚠️  Issues found but no fixes generated")
+            
+            # 4. Enterprise Quality Assurance
+            logger.info("🛡️ Running Security & Quality Review")
+            await self._run_agent(AgentRole.QUALITY, context)
+            
+            # 5. Test Generation
+            logger.info("🧪 Generating Test Suite")
+            await self._run_agent(AgentRole.TEST, context)
+                    
+        except Exception as e:
+            logger.error(f"❌ Orchestration failed: {e}")
+            context.errors.append(str(e))
         
         # Combine all files
         final_files = dict(context.files)
@@ -1032,6 +1303,36 @@ Visit http://localhost:8000/docs for Swagger UI.
 ---
 *Generated by Multi-Agent AI System*
 """
+
+    async def edit_project(
+        self,
+        current_files: Dict[str, str],
+        instruction: str,
+        project_name: str = "ExistingProject"
+    ) -> Dict[str, str]:
+        """
+        Edit an existing project based on user instructions.
+        """
+        context = AgentContext(
+            project_spec={"instruction": instruction},
+            project_name=project_name,
+            files=current_files
+        )
+        
+        logger.info(f"✏️ Editing project: {project_name} with instruction: {instruction}")
+        
+        try:
+            # Run Edit Agent
+            await self._run_agent(AgentRole.EDIT, context)
+            
+            # Run Debug Agent to ensure no regressions
+            await self._run_agent(AgentRole.DEBUG, context)
+            
+        except Exception as e:
+            logger.error(f"❌ Edit failed: {e}")
+            context.errors.append(str(e))
+            
+        return dict(context.files)
 
 
 def create_orchestrator_with_providers(

@@ -31,12 +31,14 @@ class GeminiProvider(AIProvider):
         """Check if provider is available."""
         return bool(self.api_key)
     
-    def generate(
+    async def generate(
         self,
         prompt: str,
         system_prompt: Optional[str] = None,
         max_tokens: int = 8192,
         temperature: float = 0.7,
+        image_data: Optional[str] = None,
+        mime_type: str = "image/jpeg",
     ) -> str:
         """Generate response using Gemini API."""
         if not self.is_available():
@@ -44,15 +46,37 @@ class GeminiProvider(AIProvider):
         
         url = f"{self.base_url}/models/{self.model}:generateContent?key={self.api_key}"
         
-        # Combine system prompt with user prompt
+        # Construct parts
+        parts = []
+        
+        # Add system prompt if provided (Gemini supports system instructions separately but we can prepend)
         full_prompt = prompt
         if system_prompt:
             full_prompt = f"{system_prompt}\n\n{prompt}"
+            
+        parts.append({"text": full_prompt})
+        
+        # Add image if provided
+        if image_data:
+            # Remove header if present (e.g. "data:image/jpeg;base64,")
+            if "," in image_data:
+                header, image_data = image_data.split(",", 1)
+                if "image/png" in header:
+                    mime_type = "image/png"
+                elif "image/webp" in header:
+                    mime_type = "image/webp"
+            
+            parts.append({
+                "inline_data": {
+                    "mime_type": mime_type,
+                    "data": image_data
+                }
+            })
         
         payload = {
             "contents": [
                 {
-                    "parts": [{"text": full_prompt}]
+                    "parts": parts
                 }
             ],
             "generationConfig": {
@@ -78,8 +102,8 @@ class GeminiProvider(AIProvider):
         try:
             logger.info(f"Calling Gemini API with model {self.model}")
             
-            with httpx.Client(timeout=settings.LLM_TIMEOUT) as client:
-                response = client.post(url, json=payload)
+            async with httpx.AsyncClient(timeout=settings.LLM_TIMEOUT) as client:
+                response = await client.post(url, json=payload)
                 response.raise_for_status()
                 
                 data = response.json()

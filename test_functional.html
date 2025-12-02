@@ -11,7 +11,29 @@
     <div id="results" class="space-y-2"></div>
 
     <script>
-        const API_BASE = "http://localhost:8000/api/v1";
+        // Dynamic API URL detection for Codespaces
+        function getApiUrl() {
+            const hostname = window.location.hostname;
+            const protocol = window.location.protocol;
+            
+            // Check if running in GitHub Codespaces
+            if (hostname.includes('github.dev')) {
+                // Format: <codespace-name>-<port>.app.github.dev
+                // We need to replace the current port (whatever it is) with 8000
+                
+                // Robust regex to replace the port number before the domain suffix
+                const newHostname = hostname.replace(/-(\d+)(\.app\.github\.dev|\.preview\.app\.github\.dev|\.github\.dev)/, '-8000$2');
+                
+                return `${protocol}//${newHostname}/api/v1`;
+            }
+            
+            // Localhost fallback
+            return "http://localhost:8000/api/v1";
+        }
+
+        const API_BASE = getApiUrl();
+        const HEALTH_URL = API_BASE.replace('/api/v1', '/health');
+        
         const results = document.getElementById("results");
 
         function log(message, type = "info") {
@@ -28,12 +50,13 @@
         }
 
         async function runTests() {
-            log("🚀 Starting functional tests...", "info");
+            log(`🚀 Starting functional tests...`, "info");
+            log(`📍 API URL: ${API_BASE}`, "info");
             
             // Test 1: Health Check
             try {
                 log("\n📍 Test 1: Health check");
-                const health = await fetch("http://localhost:8000/health");
+                const health = await fetch(HEALTH_URL);
                 const healthData = await health.json();
                 log(`✅ Health check passed: ${JSON.stringify(healthData)}`, "success");
             } catch (e) {

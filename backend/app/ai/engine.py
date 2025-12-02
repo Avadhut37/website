@@ -89,6 +89,7 @@ class AIEngine:
         self,
         spec: Dict[str, Any],
         project_name: str,
+        image_data: Optional[str] = None
     ) -> Dict[str, str]:
         """
         Generate a complete project based on the specification.
@@ -98,6 +99,7 @@ class AIEngine:
         Args:
             spec: Project specification (parsed from user input)
             project_name: Name of the project
+            image_data: Optional base64 encoded image for visual context
             
         Returns:
             Dictionary mapping file paths to file contents
@@ -106,7 +108,7 @@ class AIEngine:
         if self.use_agents and self.orchestrator:
             try:
                 logger.info("🤖 Using multi-agent collaboration mode (5 agents)")
-                files = await self.orchestrator.generate_project(spec, project_name)
+                files = await self.orchestrator.generate_project(spec, project_name, image_data=image_data)
                 if files and len(files) > 0:
                     logger.info(f"✅ Multi-agent generated {len(files)} files")
                     return files
@@ -119,12 +121,22 @@ class AIEngine:
             return self._generate_fallback(spec, project_name)
         
         prompt = get_generation_prompt(spec, project_name)
+        if image_data:
+            prompt += "\n\n[IMAGE CONTEXT PROVIDED] Use the attached image as a visual reference for the UI design."
         
         # Try providers in order of priority/success rate
         max_attempts = min(3, len(self.providers))
         
         for attempt in range(max_attempts):
-            provider, reason = self.router.select_provider()
+            # If image is provided, force Gemini (or other vision capable model)
+            if image_data:
+                # Find Gemini provider
+                provider = next((p for p in self.providers if "gemini" in p.name.lower()), None)
+                if not provider:
+                    logger.warning("⚠️ Image provided but no vision-capable provider found. Ignoring image.")
+                    provider, _ = self.router.select_provider()
+            else:
+                provider, reason = self.router.select_provider()
             
             if not provider:
                 break
@@ -133,11 +145,17 @@ class AIEngine:
                 start_time = time.time()
                 logger.info(f"🔄 Attempt {attempt + 1}: Using {provider.name}")
                 
-                response = provider.generate(
+                # Pass image_data if the provider supports it (Gemini does)
+                kwargs = {}
+                if image_data and "gemini" in provider.name.lower():
+                    kwargs["image_data"] = image_data
+                
+                response = await provider.generate(
                     prompt=prompt,
                     system_prompt=SYSTEM_PROMPT,
                     max_tokens=settings.LLM_MAX_TOKENS,
                     temperature=0.3,  # Lower for more deterministic code
+                    **kwargs
                 )
                 
                 if response:
@@ -158,6 +176,64 @@ class AIEngine:
         # Fallback to template generation
         logger.info("📝 Using template fallback generation")
         return self._generate_fallback(spec, project_name)
+
+    async def edit_project(
+        self,
+        current_files: Dict[str, str],
+        instruction: str,
+        project_name: str = "ExistingProject",
+        image_data: Optional[str] = None
+    ) -> Dict[str, str]:
+        """
+        Edit an existing project based on user instructions.
+        """
+        # TODO: Update agents to support images
+        if self.use_agents and self.orchestrator and not image_data:
+            try:
+                logger.info(f"🤖 Using multi-agent edit mode for: {project_name}")
+                files = await self.orchestrator.edit_project(current_files, instruction, project_name)
+                if files:
+                    logger.info(f"✅ Multi-agent edited {len(files)} files")
+                    return files
+            except Exception as e:
+                logger.error(f"❌ Multi-agent edit failed: {e}")
+        
+        # Fallback to single model edit if agents fail or image is present
+        # (Since agents don't support images yet, we use single model for vision edits)
+        
+        # Construct a simple edit prompt for single model
+        prompt = f"""You are an expert full-stack developer.
+Project: {project_name}
+Instruction: {instruction}
+
+Current Files:
+{json.dumps(current_files, indent=2)}
+
+Return ONLY a JSON object mapping file paths to their NEW content.
+Only include files that need to change.
+"""
+        if image_data:
+            prompt += "\n\n[IMAGE CONTEXT PROVIDED] Use the attached image as a visual reference for the changes."
+
+        # Force Gemini for vision
+        provider = next((p for p in self.providers if "gemini" in p.name.lower()), None)
+        if not provider and self.providers:
+            provider = self.providers[0]
+            
+        if provider:
+            try:
+                kwargs = {}
+                if image_data and "gemini" in provider.name.lower():
+                    kwargs["image_data"] = image_data
+                    
+                response = await provider.generate(prompt, **kwargs)
+                return self._parse_response(response) or {}
+            except Exception as e:
+                logger.error(f"Single model edit failed: {e}")
+
+        logger.warning("⚠️  Edit mode requires multi-agent system or valid provider")
+        return {}
+
     
     def _parse_response(self, response: str) -> Optional[Dict[str, str]]:
         """Parse AI response to extract file contents."""
@@ -525,19 +601,3 @@ def get_ai_engine() -> AIEngine:
         _engine = AIEngine()
     return _engine
 
-
-# Sync wrapper for backward compatibility
-def call_llm_and_generate(spec: dict) -> Dict[str, str]:
-    """Synchronous wrapper for project generation."""
-    engine = get_ai_engine()
-    project_name = spec.get("name", spec.get("raw", "GeneratedApp"))
-    if isinstance(project_name, str) and len(project_name) > 50:
-        project_name = project_name[:50]
-    
-    # Run async generation in sync context
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        return loop.run_until_complete(engine.generate_project(spec, project_name))
-    finally:
-        loop.close()
