@@ -85,7 +85,7 @@ export default function LivePreview({ files, appName, terminalLogs, isRunning })
       } else {
         console.log('⚠️ No App file found, using fallback demo');
         bundledCode = `
-    // Fallback Demo App
+    // Fallback Demo App (shown because no frontend/src/App.jsx was generated)
     function App() {
       const [items, setItems] = React.useState([]);
       const [title, setTitle] = React.useState('');
@@ -326,7 +326,9 @@ export default function LivePreview({ files, appName, terminalLogs, isRunning })
             <div className="w-3 h-3 rounded-full bg-yellow-500"></div>
             <div className="w-3 h-3 rounded-full bg-green-500"></div>
           </div>
-          <span className="text-gray-600 text-sm ml-2">localhost:3000</span>
+          <span className="text-gray-600 text-sm ml-2">
+            {files ? `Previewing ${Object.keys(files).length} files` : "Waiting for code"}
+          </span>
         </div>
         <button
           onClick={() => {

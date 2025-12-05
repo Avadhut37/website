@@ -16,7 +16,19 @@ export default function ConnectionStatus() {
     
     try {
       console.log('🔍 Testing connection to:', API_BASE_URL);
-      const response = await fetch(`${API_BASE_URL}/health`);
+      const response = await fetch(`${API_BASE_URL}/health`, {
+        method: 'GET',
+        mode: 'cors',
+        cache: 'no-cache',
+        headers: {
+          'Accept': 'application/json',
+        },
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+      
       const data = await response.json();
       
       if (data.status === 'ok') {
@@ -30,6 +42,7 @@ export default function ConnectionStatus() {
       setStatus('error');
       setError(err.message);
       console.error('❌ Backend connection failed:', err);
+      console.error('💡 If using Codespaces, make sure port 8000 is set to PUBLIC visibility in the PORTS tab');
     }
   };
 
@@ -44,7 +57,7 @@ export default function ConnectionStatus() {
 
   if (status === 'error') {
     return (
-      <div className="fixed bottom-4 right-4 bg-red-500 text-white px-4 py-3 rounded-lg shadow-lg max-w-md">
+      <div className="fixed bottom-4 right-4 bg-red-500 text-white px-4 py-3 rounded-lg shadow-lg max-w-md z-50">
         <div className="flex items-start gap-2">
           <span className="text-xl">❌</span>
           <div className="flex-1">
@@ -57,6 +70,12 @@ export default function ConnectionStatus() {
                 {error}
               </div>
             )}
+            <div className="mt-2 text-xs bg-red-600 p-2 rounded">
+              <strong>Codespaces Fix:</strong><br/>
+              1. Click <strong>PORTS</strong> tab (bottom panel)<br/>
+              2. Find port <strong>8000</strong><br/>
+              3. Right-click → <strong>Port Visibility</strong> → <strong>Public</strong>
+            </div>
             <button
               onClick={checkConnection}
               className="mt-2 text-xs bg-white text-red-500 px-3 py-1 rounded hover:bg-red-50 transition"

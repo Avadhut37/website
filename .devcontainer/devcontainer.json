@@ -1,0 +1,31 @@
+{
+  "name": "iStudiox Development",
+  "image": "mcr.microsoft.com/devcontainers/universal:2",
+  "forwardPorts": [8000, 5173],
+  "portsAttributes": {
+    "8000": {
+      "label": "Backend API",
+      "onAutoForward": "notify",
+      "visibility": "public"
+    },
+    "5173": {
+      "label": "Frontend",
+      "onAutoForward": "notify",
+      "visibility": "public"
+    }
+  },
+  "postCreateCommand": "cd /workspaces/website/backend && python -m venv .venv && .venv/bin/pip install -r requirements.txt",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/workspaces/website/.venv/bin/python"
+      }
+    }
+  }
+}

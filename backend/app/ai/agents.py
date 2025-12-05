@@ -10,7 +10,7 @@ Architecture (per blueprint):
 
 Task-Based Model Selection:
 - Code Generation → Groq (LLAMA 3.3 70B, fastest)
-- Reasoning/Planning → Cerebras (Llama 3.3 70B, ultra-fast)
+- Reasoning/Planning → DeepSeek (R1 671B, ultra-fast reasoning)
 - UI/Text → Gemini (best quality)
 """
 import asyncio
@@ -22,7 +22,12 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from ..core.config import settings
 from ..core.logging import logger
+from ..schemas import ProjectManifest, create_default_manifest, validate_manifest, AppType
+from ..services.ast_patcher import generate_patch, apply_patch
+from ..services.validation import get_validation_service
+from ..services.memory import get_project_memory
 from .providers.base import AIProvider
+from pydantic import ValidationError
 
 
 class AgentRole(str, Enum):
@@ -59,6 +64,7 @@ class AgentContext:
     """Shared context between agents."""
     project_spec: Dict[str, Any]
     project_name: str
+    project_id: Optional[int] = None
     image_data: Optional[str] = None
     messages: List[AgentMessage] = field(default_factory=list)
     files: Dict[str, str] = field(default_factory=dict)
@@ -249,104 +255,187 @@ class BaseAgent:
 
 class CoreAgent(BaseAgent):
     """
-    CORE Agent - The Orchestrator.
+    CORE Agent - The Orchestrator with strict manifest output.
     
     Responsibilities:
     - Analyze user request
+    - Create structured ProjectManifest
     - Decide which agents to activate
     - Coordinate agent collaboration
-    - Final assembly of project
     """
     
     ROLE = AgentRole.CORE
-    TASK_TYPE = TaskType.REASONING
+    TASK_TYPE = TaskType.REASONING  # Will use DeepSeek for deep analysis
     
     SYSTEM_PROMPT = """You are CORE, the Lead Product Manager & Orchestrator.
 
-Your Goal: Define a clear, high-value product vision and coordinate the engineering team to build it.
+Your Goal: Create a PRECISE, STRUCTURED project manifest that drives all downstream generation.
 
-Responsibilities:
-1. Requirement Analysis: Deeply understand the user's intent. Identify implicit requirements (e.g., "dashboard" implies charts, "social" implies auth).
-2. Product Planning: Create a detailed feature list and roadmap.
-3. Team Coordination: Assign tasks to ARCH, BACKEND, UIX, DEBUG, QUALITY, and TEST agents.
-4. File Structure: Define the initial project skeleton.
+OUTPUT FORMAT (STRICT JSON ONLY):
+- Respond with a single JSON object that matches this schema.
+- Do not wrap it in markdown code fences.
+- Do not add explanations before or after.
 
-Output Format:
-- Start with [AGENT: CORE]
-- Provide a professional Product Requirement Document (PRD) summary.
-- Output JSON with 'analysis', 'features', 'agents_needed', and 'file_structure'.
+Manifest schema (keys and value types):
+{
+    "analysis": "string (2-3 sentence summary)",
+    "app_type": "one of: crud | ecommerce | dashboard | social | todo | blog | auth | booking | api",
+    "features": ["string", ...],
+    "tech_stack": {
+        "backend": "FastAPI + Pydantic",
+        "frontend": "React 18 + Vite",
+        "styling": "Tailwind CSS"
+    },
+    "models": [
+        {
+            "name": "string",
+            "fields": {"field_name": "type"},
+            "relationships": ["optional relationship description"]
+        }
+    ],
+    "endpoints": [
+        {
+            "path": "string, e.g. /api/items",
+            "method": "GET" | "POST" | "PUT" | "DELETE" | "PATCH",
+            "description": "string",
+            "request_model": "string or null",
+            "response_model": "string"
+        }
+    ],
+    "files_to_generate": [
+        {
+            "path": "string, e.g. backend/main.py",
+            "description": "string",
+            "dependencies": ["optional list of related files"]
+        }
+    ],
+    "integrations": ["string"],
+    "agents_needed": [
+        "ARCH" | "BACKEND" | "UIX" | "DEBUG" | "QUALITY" | "TEST"
+    ],
+    "priority": "short string describing what to build first"
+}
 
-Think like a startup CTO. Prioritize user value and technical feasibility."""
+CRITICAL RULES:
+- "agents_needed" MUST be an array containing only these values: ARCH, BACKEND, UIX, DEBUG, QUALITY, TEST.
+- "response_model" fields MUST always be non-null strings.
+- All paths MUST be valid URL paths (start with "/").
+- Output ONLY valid JSON, with no comments and no markdown."""
     
     async def execute(self, context: AgentContext) -> AgentMessage:
-        """Analyze request and create generation plan."""
+        """Analyze request and create strict manifest with memory context."""
         spec = context.project_spec
         raw_desc = spec.get("raw", spec.get("description", ""))
         
-        prompt = f"""Analyze this app request and create a generation plan:
+        # Get memory context if project_id available
+        memory_context = ""
+        if context.project_id:
+            try:
+                memory = get_project_memory(context.project_id)
+                mem_data = memory.get_context_for_generation(raw_desc, max_results=5)
+                
+                # Build context string
+                if mem_data.get("preferences"):
+                    memory_context += "\n\n[PROJECT PREFERENCES]\n"
+                    for key, value in mem_data["preferences"].items():
+                        memory_context += f"  • {key}: {value}\n"
+                
+                if mem_data.get("constraints"):
+                    memory_context += "\n[CONSTRAINTS (MUST)]\n"
+                    for constraint in mem_data["constraints"][:5]:
+                        memory_context += f"  • {constraint}\n"
+                
+                if mem_data.get("suggestions"):
+                    memory_context += "\n[SUGGESTIONS (SHOULD)]\n"
+                    for suggestion in mem_data["suggestions"][:3]:
+                        memory_context += f"  • {suggestion}\n"
+                
+                if mem_data.get("past_decisions"):
+                    memory_context += "\n[PAST DECISIONS]\n"
+                    for decision in mem_data["past_decisions"][:3]:
+                        memory_context += f"  • {decision.get('metadata', {}).get('decision', '')}\n"
+                
+                if memory_context:
+                    logger.info(f"[CORE] Using memory context ({len(memory_context)} chars)")
+            except Exception as e:
+                logger.warning(f"[CORE] Failed to load memory context: {e}")
+        
+        prompt = f"""Analyze this app request and create a STRUCTURED PROJECT MANIFEST:
 
 PROJECT: {context.project_name}
 DESCRIPTION: {raw_desc}
 
 SPEC DETAILS:
-{json.dumps(spec, indent=2, default=str)}
+{json.dumps(spec, indent=2, default=str)}{memory_context}
 
-Tasks:
-1. Identify the core features needed
-2. Define the tech stack (FastAPI backend + React frontend)
-3. List the files that need to be generated
-4. Identify which specialist agents are needed
+Create a complete project manifest following the exact JSON schema.
+Identify:
+1. App type (choose ONE: crud, ecommerce, dashboard, social, todo, blog, auth, booking, api)
+2. Core features (minimum 3, maximum 10)
+3. Data models needed (with fields and types)
+4. API endpoints (full CRUD for each model)
+5. All files to generate (include ALL standard files)
+6. Which specialist agents to activate
 
-Output a JSON object with:
-{{
-    "analysis": "Brief analysis of requirements",
-    "features": ["feature1", "feature2"],
-    "agents_needed": ["ARCH", "BACKEND", "UIX"],
-    "file_structure": {{
-        "backend": ["main.py", "models.py", "requirements.txt"],
-        "frontend": ["src/App.jsx", "src/main.jsx", "package.json", "index.html"]
-    }},
-    "priority": "What to build first"
-}}"""
+IMPORTANT: Respect all preferences and constraints from project memory above.
+
+Return ONLY the JSON manifest."""
 
         if context.image_data:
-            prompt += "\n\n[IMAGE CONTEXT PROVIDED] The user has provided a UI design image. Ensure the plan accounts for the visual structure in the image."
+            prompt += "\n\n[IMAGE CONTEXT] UI design image provided - analyze visual structure."
 
         response = await self._call_llm(prompt)
         
         if not response:
-            # Fallback plan
+            # Use fallback manifest
+            fallback = create_default_manifest(context.project_name, raw_desc)
+            logger.warning("[CORE] Using fallback manifest (no LLM response)")
             return AgentMessage(
                 role=self.ROLE,
-                content="Using default generation plan",
-                reasoning="No LLM response, using template",
+                content=fallback.model_dump_json(indent=2),
+                reasoning="Default manifest (no LLM)",
                 confidence=0.5,
                 artifacts={}
             )
         
-        # Parse the plan
+        # Parse and validate manifest
         try:
             # Extract JSON from response
             json_match = re.search(r'\{[\s\S]*\}', response)
-            if json_match:
-                plan = json.loads(json_match.group())
-                return AgentMessage(
-                    role=self.ROLE,
-                    content=json.dumps(plan, indent=2),
-                    reasoning=plan.get("analysis", ""),
-                    confidence=0.9,
-                    artifacts={}
-                )
-        except json.JSONDecodeError:
-            pass
-        
-        return AgentMessage(
-            role=self.ROLE,
-            content=response,
-            reasoning="Plan created",
-            confidence=0.7,
-            artifacts={}
-        )
+            if not json_match:
+                raise ValueError("No JSON found in response")
+            
+            plan_dict = json.loads(json_match.group())
+            
+            # Validate with Pydantic
+            manifest = validate_manifest(plan_dict)
+            
+            logger.info(f"[CORE] ✅ Valid manifest created: {manifest.app_type}")
+            logger.info(f"[CORE] Features: {', '.join(manifest.features[:3])}...")
+            logger.info(f"[CORE] Models: {len(manifest.models)}, Endpoints: {len(manifest.endpoints)}")
+            
+            return AgentMessage(
+                role=self.ROLE,
+                content=manifest.model_dump_json(indent=2),
+                reasoning=manifest.analysis,
+                confidence=0.95,
+                artifacts={}
+            )
+            
+        except (json.JSONDecodeError, ValidationError) as e:
+            logger.error(f"[CORE] ❌ Invalid manifest: {e}")
+            
+            # Try to recover with fallback
+            fallback = create_default_manifest(context.project_name, raw_desc)
+            logger.warning("[CORE] Using fallback manifest (validation failed)")
+            
+            return AgentMessage(
+                role=self.ROLE,
+                content=fallback.model_dump_json(indent=2),
+                reasoning=f"Fallback manifest (error: {str(e)[:100]})",
+                confidence=0.6,
+                artifacts={}
+            )
 
 
 class ArchAgent(BaseAgent):
@@ -969,7 +1058,7 @@ Output Format:
 Be precise. Do not break existing functionality."""
     
     async def execute(self, context: AgentContext) -> AgentMessage:
-        """Apply edits to existing files."""
+        """Apply edits to existing files using AST-aware patching."""
         spec = context.project_spec
         instruction = spec.get("instruction", "")
         
@@ -988,14 +1077,40 @@ Return ONLY the files that need to be changed as JSON:
 """
 
         response = await self._call_llm(prompt, max_tokens=8192)
-        artifacts = self._parse_json_response(response)
+        raw_artifacts = self._parse_json_response(response)
+        
+        if not raw_artifacts:
+            return AgentMessage(
+                role=self.ROLE,
+                content="No changes generated",
+                reasoning="LLM returned no files",
+                confidence=0.5,
+                artifacts={}
+            )
+        
+        # Apply AST-aware patching for Python files
+        patched_artifacts = {}
+        for filepath, new_content in raw_artifacts.items():
+            if filepath in all_files and filepath.endswith('.py'):
+                # Try AST patching
+                old_content = all_files[filepath]
+                patch = generate_patch(old_content, new_content, filepath)
+                
+                if patch.patch_type != "full_replace":
+                    logger.info(f"[EDIT] Applying {patch.patch_type} patch to {filepath}")
+                    patched_content = apply_patch(old_content, patch)
+                    patched_artifacts[filepath] = patched_content
+                else:
+                    patched_artifacts[filepath] = new_content
+            else:
+                patched_artifacts[filepath] = new_content
         
         return AgentMessage(
             role=self.ROLE,
-            content=f"Applied edits to {len(artifacts) if artifacts else 0} files",
-            reasoning="Edits applied",
+            content=f"Applied edits to {len(patched_artifacts)} files",
+            reasoning="Edits applied with AST patching where possible",
             confidence=0.9,
-            artifacts=artifacts or {}
+            artifacts=patched_artifacts
         )
 
 
@@ -1034,7 +1149,7 @@ Output Format:
 Be strict but practical."""
     
     async def execute(self, context: AgentContext) -> AgentMessage:
-        """Review and fix code quality issues."""
+        """Review and fix code quality issues with automated validation."""
         
         # Collect all current files
         all_files = dict(context.files)
@@ -1042,11 +1157,41 @@ Be strict but practical."""
         # Skip if no files
         if not all_files:
             return AgentMessage(role=self.ROLE, content="No files to review")
+        
+        # Run automated validation first
+        validation_service = get_validation_service()
+        all_passed, validation_results = await validation_service.validate_and_report(all_files)
+        
+        # Collect validation issues
+        issues_summary = []
+        critical_issues = []
+        
+        for validator_name, result in validation_results.items():
+            if not result.passed:
+                issues_summary.append(
+                    f"{validator_name}: {result.error_count} errors, {result.warning_count} warnings"
+                )
+                
+                for issue in result.issues:
+                    if issue.severity.value == "error":
+                        critical_issues.append(
+                            f"{issue.file}:{issue.line} - {issue.message} ({issue.rule})"
+                        )
+        
+        # Build prompt with validation feedback
+        validation_feedback = "\n".join(issues_summary) if issues_summary else "No automated issues found"
+        critical_feedback = "\n".join(f"- {issue}" for issue in critical_issues[:20])
 
         prompt = f"""Review and fix quality/security issues in these files:
 
 FILES:
 {json.dumps(all_files, indent=2)}
+
+AUTOMATED VALIDATION RESULTS:
+{validation_feedback}
+
+CRITICAL ISSUES TO FIX:
+{critical_feedback if critical_feedback else "None"}
 
 Check for:
 1. Security: Hardcoded secrets, missing auth, injection risks
@@ -1060,11 +1205,13 @@ Output ONLY the files that needed fixing as JSON:
         response = await self._call_llm(prompt, max_tokens=8192)
         artifacts = self._parse_json_response(response)
         
+        status = "✅ All checks passed" if all_passed else f"⚠️ {len(critical_issues)} issues found"
+        
         return AgentMessage(
             role=self.ROLE,
-            content=f"Quality review complete. Fixed {len(artifacts) if artifacts else 0} files",
-            reasoning="Quality improvements applied",
-            confidence=0.9,
+            content=f"Quality review complete: {status}. Fixed {len(artifacts) if artifacts else 0} files",
+            reasoning=f"Automated validation + LLM review. {len(validation_results)} validators run",
+            confidence=0.9 if all_passed else 0.7,
             artifacts=artifacts or {}
         )
 
@@ -1197,7 +1344,8 @@ class AgentOrchestrator:
         self,
         spec: Dict[str, Any],
         project_name: Optional[str] = None,
-        image_data: Optional[str] = None
+        image_data: Optional[str] = None,
+        project_id: Optional[int] = None
     ) -> Dict[str, str]:
         """
         Generate a complete project using multi-agent collaboration.
@@ -1206,6 +1354,7 @@ class AgentOrchestrator:
             spec: Project specification
             project_name: Name of the project
             image_data: Optional base64 encoded image
+            project_id: ID of the project (for context tracking)
             
         Returns:
             Dictionary of filepath -> content
@@ -1217,6 +1366,7 @@ class AgentOrchestrator:
         context = AgentContext(
             project_spec=spec,
             project_name=project_name,
+            project_id=project_id,
             image_data=image_data
         )
         
@@ -1355,10 +1505,15 @@ def create_orchestrator_with_providers(
         
         name = provider.name.lower()
         
-        if 'groq' in name:
+        # Priority mapping: DeepSeek first for reasoning
+        if 'deepseek' in name:
+            provider_map[TaskType.REASONING] = provider  # PRIMARY for reasoning
+        elif 'groq' in name:
             provider_map[TaskType.CODE] = provider
         elif 'cerebras' in name:
-            provider_map[TaskType.REASONING] = provider
+            # Fallback for reasoning if DeepSeek unavailable
+            if TaskType.REASONING not in provider_map:
+                provider_map[TaskType.REASONING] = provider
         elif 'gemini' in name:
             provider_map[TaskType.UI_TEXT] = provider
         elif 'openrouter' in name:
@@ -1377,5 +1532,9 @@ def create_orchestrator_with_providers(
             for task_type in TaskType:
                 if task_type not in provider_map:
                     provider_map[task_type] = available[0]
+    
+    logger.info(f"🤖 Agent-Provider Mapping:")
+    for task_type, provider in provider_map.items():
+        logger.info(f"   {task_type.value} → {provider.name}")
     
     return AgentOrchestrator(provider_map)

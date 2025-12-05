@@ -45,11 +45,18 @@ class AIEngine:
         self.providers: List[AIProvider] = []
         self.router: Optional[ModelRouter] = None
         self.orchestrator: Optional[AgentOrchestrator] = None
-        self.use_agents = settings.DEBUG  # Use agents in dev mode
+        self.use_agents = False  # Temporarily disable agents due to timeout issues
         self._setup_providers()
     
     def _setup_providers(self):
         """Initialize available providers in priority order."""
+        # DeepSeek - BEST for REASONING (671B params, ultra-fast)
+        from .providers.deepseek import DeepSeekProvider
+        deepseek = DeepSeekProvider()
+        if deepseek.is_available():
+            self.providers.append(deepseek)
+            logger.info(f"✅ DeepSeek enabled: {deepseek.model} (reasoning specialist)")
+        
         # Gemini - PRIMARY for UI/Text (1500 free/day per key)
         gemini = GeminiProvider()
         if gemini.is_available():
@@ -89,7 +96,8 @@ class AIEngine:
         self,
         spec: Dict[str, Any],
         project_name: str,
-        image_data: Optional[str] = None
+        image_data: Optional[str] = None,
+        project_id: Optional[int] = None
     ) -> Dict[str, str]:
         """
         Generate a complete project based on the specification.
@@ -108,7 +116,9 @@ class AIEngine:
         if self.use_agents and self.orchestrator:
             try:
                 logger.info("🤖 Using multi-agent collaboration mode (5 agents)")
-                files = await self.orchestrator.generate_project(spec, project_name, image_data=image_data)
+                files = await self.orchestrator.generate_project(
+                    spec, project_name, image_data=image_data, project_id=project_id
+                )
                 if files and len(files) > 0:
                     logger.info(f"✅ Multi-agent generated {len(files)} files")
                     return files
@@ -237,33 +247,60 @@ Only include files that need to change.
     
     def _parse_response(self, response: str) -> Optional[Dict[str, str]]:
         """Parse AI response to extract file contents."""
-        # Try direct JSON parse
+        if not response or not response.strip():
+            return None
+            
+        # Clean up response
+        response = response.strip()
+        
+        # Try direct JSON parse first
         try:
             files = json.loads(response)
-            if isinstance(files, dict):
-                return files
+            if isinstance(files, dict) and files:
+                # Validate it looks like file paths
+                if any('/' in str(k) or '.' in str(k) for k in files.keys()):
+                    return files
         except json.JSONDecodeError:
             pass
         
-        # Try to find JSON in markdown code blocks
+        # Remove markdown code blocks
+        cleaned = response
+        if '```' in response:
+            # Remove ```json ... ``` or ``` ... ```
+            cleaned = re.sub(r'```(?:json)?\s*', '', cleaned)
+            cleaned = cleaned.strip()
+            try:
+                files = json.loads(cleaned)
+                if isinstance(files, dict) and files:
+                    if any('/' in str(k) or '.' in str(k) for k in files.keys()):
+                        return files
+            except json.JSONDecodeError:
+                pass
+        
+        # Try to extract JSON object from anywhere in the response
         json_patterns = [
-            r'```json\s*([\s\S]*?)\s*```',
-            r'```\s*([\s\S]*?)\s*```',
-            r'\{[\s\S]*\}',
+            r'```json\s*([\s\S]*?)\s*```',  # ```json ... ```
+            r'```\s*([\s\S]*?)\s*```',       # ``` ... ```
+            r'(\{[\s\S]*\})',                 # Anything between { }
         ]
         
         for pattern in json_patterns:
-            matches = re.findall(pattern, response)
+            matches = re.findall(pattern, response, re.MULTILINE | re.DOTALL)
             for match in matches:
                 try:
-                    data = json.loads(match if isinstance(match, str) else match)
-                    if isinstance(data, dict) and len(data) > 0:
-                        # Validate it looks like file paths
-                        if any('/' in k or '.' in k for k in data.keys()):
+                    match_str = match if isinstance(match, str) else str(match)
+                    match_str = match_str.strip()
+                    data = json.loads(match_str)
+                    if isinstance(data, dict) and data:
+                        # Validate it looks like file paths (at least one key has / or .)
+                        if any('/' in str(k) or '.' in str(k) for k in data.keys()):
+                            logger.info(f"✅ Parsed {len(data)} files from response")
                             return data
-                except json.JSONDecodeError:
+                except (json.JSONDecodeError, ValueError) as e:
                     continue
         
+        logger.warning(f"⚠️ Could not parse files from response (length: {len(response)})")
+        logger.debug(f"Response preview: {response[:500]}...")
         return None
     
     def _generate_fallback(
@@ -443,21 +480,21 @@ python-multipart>=0.0.9
 </body>
 </html>
 ''',
-            "frontend/vite.config.js": '''import { defineConfig } from 'vite';
+                        "frontend/vite.config.js": '''import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 
 export default defineConfig({
-  plugins: [react()],
-  server: {
-    port: 3000,
-    proxy: {
-      '/api': {
-        target: 'http://localhost:8000',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\\/api/, '')
-      }
+    plugins: [react()],
+    server: {
+        port: 3000,
+        proxy: {
+            '/api': {
+                target: 'http://localhost:8000',
+                changeOrigin: true,
+                rewrite: (path) => path.replace(/^\\/api/, '')
+            }
+        }
     }
-  }
 });
 ''',
             "frontend/src/main.jsx": '''import React from 'react';
@@ -470,10 +507,13 @@ ReactDOM.createRoot(document.getElementById('root')).render(
   </React.StrictMode>
 );
 ''',
-            "frontend/src/App.jsx": f'''import React, {{ useState, useEffect }} from 'react';
+                        "frontend/src/App.jsx": f'''import React, {{ useState, useEffect }} from 'react';
 import axios from 'axios';
 
-const API_URL = 'http://localhost:8000';
+// Use relative /api base so apps work behind proxies and in Codespaces
+const api = axios.create({
+    baseURL: '/api',
+});
 
 export default function App() {{
   const [items, setItems] = useState([]);
@@ -485,9 +525,9 @@ export default function App() {{
     fetchItems();
   }}, []);
 
-  const fetchItems = async () => {{
+    const fetchItems = async () => {{
     try {{
-      const res = await axios.get(`${{API_URL}}/items`);
+    const res = await api.get('/items');
       setItems(res.data);
     }} catch (err) {{
       console.error('Error fetching items:', err);
@@ -501,7 +541,7 @@ export default function App() {{
     if (!title.trim()) return;
     
     try {{
-      await axios.post(`${{API_URL}}/items`, {{ title, description }});
+    await api.post('/items', {{ title, description }});
       setTitle('');
       setDescription('');
       fetchItems();
@@ -512,7 +552,7 @@ export default function App() {{
 
   const deleteItem = async (id) => {{
     try {{
-      await axios.delete(`${{API_URL}}/items/${{id}}`);
+    await api.delete(`/items/${id}`);
       fetchItems();
     }} catch (err) {{
       console.error('Error deleting item:', err);
@@ -578,7 +618,7 @@ export default function App() {{
             "multi_agent_enabled": self.use_agents,
             "task_routing": {
                 "code": "Groq (LLAMA 3.3 70B)" if any("groq" in p.name.lower() for p in self.providers) else "Best available",
-                "reasoning": "Cerebras (Llama 3.1 70B)" if any("cerebras" in p.name.lower() for p in self.providers) else "Best available",
+                "reasoning": "DeepSeek (R1 671B)" if any("deepseek" in p.name.lower() for p in self.providers) else "Cerebras (Llama 3.1 70B)" if any("cerebras" in p.name.lower() for p in self.providers) else "Best available",
                 "ui_text": "Gemini (gemini-2.0-flash)" if any("gemini" in p.name.lower() for p in self.providers) else "Best available"
             }
         }

@@ -36,8 +36,14 @@ class DeepSeekProvider(AIProvider):
         api_key: Optional[str] = None,
         model: Optional[str] = None,
     ):
-        self.api_key = api_key or settings.DEEPSEEK_API_KEY
-        self.model = model or settings.DEEPSEEK_MODEL or self.DEFAULT_MODEL
+        # Try DEEPSEEK_API_KEY first, fallback to OPENROUTER_API_KEY
+        import os
+        self.api_key = (
+            api_key or 
+            os.getenv("DEEPSEEK_API_KEY") or
+            os.getenv("OPENROUTER_API_KEY")
+        )
+        self.model = model or self.DEFAULT_MODEL
     
     def is_available(self) -> bool:
         """Check if provider is available."""

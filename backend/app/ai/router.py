@@ -36,11 +36,14 @@ class ModelRouter:
     def get_priority(self, provider_name: str) -> int:
         """Get priority level for provider."""
         priority_map = {
-            "gemini": ProviderPriority.PRIMARY.value,
-            "openrouter": ProviderPriority.SECONDARY.value,
-            "ollama": ProviderPriority.TERTIARY.value,
+            "deepseek": ProviderPriority.PRIMARY.value,     # Best for reasoning
+            "gemini": ProviderPriority.PRIMARY.value,        # Best for UI/text
+            "groq": ProviderPriority.PRIMARY.value,          # Best for code
+            "cerebras": ProviderPriority.SECONDARY.value,    # Alternative reasoning
+            "openrouter": ProviderPriority.SECONDARY.value,  # Fallback
+            "ollama": ProviderPriority.TERTIARY.value,       # Local fallback
         }
-        return priority_map.get(provider_name, ProviderPriority.FALLBACK.value)
+        return priority_map.get(provider_name.lower(), ProviderPriority.FALLBACK.value)
     
     def select_provider(self) -> Tuple[Optional[object], str]:
         """

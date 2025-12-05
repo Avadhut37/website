@@ -4,7 +4,7 @@ import CodeEditor from "../components/CodeEditor";
 import Terminal from "../components/Terminal";
 import LivePreview from "../components/LivePreview";
 import WebContainerPreview from "../components/WebContainerPreview";
-import { apiClient, API_V1 } from "../config/api";
+import { apiClient, API_V1, API_BASE_URL } from "../config/api";
 
 export default function Builder() {
   const [spec, setSpec] = useState("");
@@ -24,6 +24,8 @@ export default function Builder() {
   const [isRunning, setIsRunning] = useState(false);
   const [useWebContainer, setUseWebContainer] = useState(false);
   const [imagePreview, setImagePreview] = useState(null);
+  const [previewVersion, setPreviewVersion] = useState(0);
+  const [startedAt, setStartedAt] = useState(null);
   const fileInputRef = useRef(null);
   const editFileInputRef = useRef(null);
 
@@ -91,6 +93,7 @@ export default function Builder() {
     setFiles(null);
     setSelectedFile(null);
     setShowPreview(true);
+    setStartedAt(Date.now());
     setTerminalLogs([]);
     setIsRunning(false);
     setProjectId(null);
@@ -174,6 +177,7 @@ export default function Builder() {
             addLog("", "log");
             addLog("Click 'Run' to start the application!", "info");
             setLoading(false);
+            setStartedAt(null);
           } else if (pStatus === 'failed') {
             clearInterval(pollInterval);
             throw new Error("Generation failed on server");
@@ -189,6 +193,7 @@ export default function Builder() {
           clearInterval(pollInterval);
           setError(err.message);
           setLoading(false);
+          setStartedAt(null);
           setStatus("failed");
           addLog(`❌ Error: ${err.message}`, "error");
         }
@@ -199,6 +204,7 @@ export default function Builder() {
       addLog(`❌ Error: ${err.message}`, "error");
       setStatus("failed");
       setLoading(false);
+      setStartedAt(null);
     }
   }
 
@@ -252,6 +258,7 @@ export default function Builder() {
     setTerminalLogs([]);
     setIsRunning(false);
     setImagePreview(null);
+    setStartedAt(null);
   }
 
   function downloadFiles() {
@@ -263,6 +270,47 @@ export default function Builder() {
     a.download = `${name}-source.txt`;
     a.click();
   }
+
+  useEffect(() => {
+    if (!projectId) return;
+
+    let wsUrl;
+    try {
+      const url = new URL(API_BASE_URL);
+      url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+      url.pathname = `/api/v1/ws/${projectId}`;
+      wsUrl = url.toString();
+    } catch (e) {
+      console.error("Invalid API_BASE_URL", e);
+      return;
+    }
+    
+    addLog(`🔌 Connecting to live reload server...`, "info");
+    const ws = new WebSocket(wsUrl);
+
+    ws.onopen = () => {
+      addLog("✅ Live reload connected.", "success");
+    };
+
+    ws.onmessage = (event) => {
+      if (event.data === "reload") {
+        addLog("🔄 Change detected, reloading preview...", "info");
+        setPreviewVersion(v => v + 1);
+      }
+    };
+
+    ws.onclose = () => {
+      addLog("🔌 Live reload disconnected.", "log");
+    };
+
+    ws.onerror = (error) => {
+      addLog(`❌ Live reload error: ${error.message}`, "error");
+    };
+
+    return () => {
+      ws.close();
+    };
+  }, [projectId]);
 
   // Input form
   if (!showPreview) {
@@ -388,7 +436,11 @@ A todo app with:
           <button onClick={reset} className="px-3 py-1.5 bg-gray-700 text-gray-300 rounded-lg hover:bg-gray-600 text-sm">← Back</button>
           <span className="text-white font-semibold">{name}</span>
           <span className={`text-sm ${status === "ready" ? "text-green-400" : status === "generating" ? "text-blue-400" : "text-gray-400"}`}>
-            {status === "generating" && "⏳ Generating..."}
+            {status === "generating" && (
+              startedAt
+                ? `⏳ Generating… ${Math.floor((Date.now() - startedAt) / 1000)}s`
+                : "⏳ Generating…"
+            )}
             {status === "ready" && "✅ Ready"}
           </span>
         </div>
@@ -538,7 +590,7 @@ A todo app with:
               useWebContainer ? (
                 <WebContainerPreview files={files} onLog={(msg, type) => addLog(msg, type)} />
               ) : (
-                <LivePreview files={files} appName={name} terminalLogs={terminalLogs} isRunning={isRunning} />
+                <LivePreview key={previewVersion} files={files} appName={name} terminalLogs={terminalLogs} isRunning={isRunning} />
               )
             ) : (
               <Terminal

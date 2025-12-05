@@ -11,7 +11,7 @@ from .core.config import settings
 from .core.logging import logger
 from .core.rate_limit import limiter, get_rate_limit_exceeded_handler
 from .database import engine
-from .routers import ai, auth, projects
+from .routers import ai, auth, projects, websockets
 
 
 def create_db_and_tables() -> None:
@@ -83,6 +83,11 @@ async def global_exception_handler(request: Request, exc: Exception):
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["Authentication"])
 app.include_router(projects.router, prefix="/api/v1/projects", tags=["Projects"])
 app.include_router(ai.router, prefix="/api/v1/ai", tags=["AI"])
+app.include_router(websockets.router, prefix="/api/v1", tags=["WebSockets"])
+
+# Import and include preview router
+from .routers import preview
+app.include_router(preview.router, prefix="/api/v1/preview", tags=["Preview"])
 
 # Legacy routes (for backward compatibility)
 app.include_router(auth.router, prefix="/auth", tags=["Authentication (Legacy)"], include_in_schema=False)
